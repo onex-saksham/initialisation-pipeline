@@ -350,6 +350,99 @@ pipeline {
                 }
             }
         }
+        stage('Configure Inter-Service SSH') {
+            steps {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
+                    keyFileVariable: 'JENKINS_KEY_FILE'
+                )]) {
+                    script {
+                        // Check if this is a multi-node deployment. If not, skip this stage.
+                        if (nodesToProvision.size() <= 1) {
+                            echo "Skipping inter-service SSH configuration for single-node deployment."
+                            return // Exit the stage
+                        }
+
+                        echo "--- Starting Inter-Service SSH Configuration ---"
+
+                        // Find all IP addresses for 'api' and 'backend_job' components
+                        def apiIps = []
+                        def backendIps = []
+                        nodesToProvision.each { ip, componentList ->
+                            componentList.each { details ->
+                                if (details.component == 'api') {
+                                    apiIps.add(ip)
+                                }
+                                if (details.component == 'backend_job') {
+                                    backendIps.add(ip)
+                                }
+                            }
+                        }
+                        
+                        apiIps = apiIps.unique()
+                        backendIps = backendIps.unique()
+
+                        if (apiIps.isEmpty() || backendIps.isEmpty()) {
+                            echo "Warning: Missing 'api' or 'backend_job' components in the plan. Skipping SSH setup."
+                            return
+                        }
+
+                        // For each API node, generate a key and distribute it to all backend nodes
+                        apiIps.each { apiIp ->
+                            echo "Configuring API node at ${apiIp}..."
+                            def apiDeployUser = passwords[apiIp].deploy_user
+                            def apiDeployHost = "${apiDeployUser}@${apiIp}"
+                            def sshPort = config.ssh_port ?: 22
+
+                            // Step 1: Ensure sshpass is installed on the API node itself for connecting to the backend
+                            echo "Step 1: Ensuring sshpass is installed on API node ${apiIp}"
+                            def installSshpass = "command -v sshpass >/dev/null 2>&1 || { echo 'sshpass not found, installing...'; sudo apt-get update && sudo apt-get install -y sshpass; }"
+                            sh 'echo \'' + installSshpass + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
+
+                            // Step 2: Generate an SSH key on the API node (if it doesn't exist) and get its public key
+                            echo "Step 2: Generating/retrieving SSH public key from API node ${apiIp}"
+                            def getKeyCommand = """
+                                set -e
+                                if [ ! -f ~/.ssh/id_rsa.pub ]; then
+                                    echo 'Generating new SSH key on API node...'
+                                    ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
+                                fi
+                                cat ~/.ssh/id_rsa.pub
+                            """
+                            def apiPublicKey = sh(
+                                script: 'echo \'' + getKeyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\'',
+                                returnStdout: true
+                            ).trim()
+
+                            if (!apiPublicKey) {
+                                error "FATAL: Failed to get public key from API node ${apiIp}"
+                            }
+
+                            // Step 3: Distribute the API node's public key to every backend node
+                            backendIps.each { backendIp ->
+                                echo " -> Distributing key from ${apiIp} to backend node ${backendIp}"
+                                def backendDeployUser = passwords[backendIp].deploy_user
+                                def backendDeployPass = passwords[backendIp].deploy_password
+                                
+                                // This command will be executed ON THE API NODE to connect to the backend node
+                                def distributeKeyCommand = """
+                                    set -e
+                                    # Use sshpass to provide the backend's password non-interactively
+                                    sshpass -p '${backendDeployPass}' ssh-copy-id -p ${sshPort} -o StrictHostKeyChecking=no ${backendDeployUser}@${backendIp}
+                                """
+                                sh 'echo \'' + distributeKeyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
+                                
+                                // Step 4: Verify the passwordless connection from API to Backend
+                                echo " -> Verifying connection from ${apiIp} to ${backendIp}"
+                                def verifyCommand = "ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendDeployUser}@${backendIp} 'echo Successfully connected from API to Backend'"
+                                sh 'echo \'' + verifyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
+                            }
+                        }
+                        echo "--- Finished Inter-Service SSH Configuration ---"
+                    }
+                }
+            }
+        }
     }
 
     post {
