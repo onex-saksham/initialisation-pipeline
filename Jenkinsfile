@@ -140,34 +140,108 @@ agent any
                             echo "Step 3: Verifying passwordless SSH access"
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
-                            // Step 4: Trigger a reboot to apply all core changes
-                            echo "Step 4: Triggering reboot on ${ip}"
-                            // '|| true' ensures the pipeline doesn't fail when the SSH connection is severed by the reboot
-                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+                            // // Step 4: Trigger a reboot to apply all core changes
+                            // echo "Step 4: Triggering reboot on ${ip}"
+                            // // '|| true' ensures the pipeline doesn't fail when the SSH connection is severed by the reboot
+                            // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
-                            // Step 5: Wait for the server to come back online
-                            echo "Step 5: Waiting for ${ip} to come back online..."
-                            timeout(time: 5, unit: 'MINUTES') {
-                                waitUntil {
-                                    try {
-                                        def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
-                                        return status == 0
-                                    } catch (Exception e) {
-                                        return false
-                                    }
-                                }
-                            }
-                            echo "Server ${ip} is back online."
+                            // // Step 5: Wait for the server to come back online
+                            // echo "Step 5: Waiting for ${ip} to come back online..."
+                            // timeout(time: 5, unit: 'MINUTES') {
+                            //     waitUntil {
+                            //         try {
+                            //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+                            //             return status == 0
+                            //         } catch (Exception e) {
+                            //             return false
+                            //         }
+                            //     }
+                            // }
+                            // echo "Server ${ip} is back online."
                             
-                            sleep 10
+                            // sleep 10
                             
-                            echo "--- Finished Provisioning and Reboot on ${ip} ---"
+                            // echo "--- Finished Provisioning and Reboot on ${ip} ---"
                         }
                     }
                 }
             }
         }
-        
+        stage('Configure Components') {
+            steps {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
+                    keyFileVariable: 'JENKINS_KEY_FILE'
+                )]) {
+                    script {
+                        nodesToProvision.each { ip, details ->
+                            echo "--- Configuring Component on ${ip} for: ${details.component} ---"
+
+                            def componentData = details.data
+                            def deployUser = passwords[ip].deploy_user
+                            def sshPort = config.ssh_port ?: 22
+                            def deployHost = "${deployUser}@${ip}"
+
+                            // Dynamically build the remote script
+                            def remoteCommand = """
+                                set -e
+                                echo '>>> 1. Disabling automatic unattended upgrades...'
+                                sudo systemctl stop unattended-upgrades.service || true
+                                sudo systemctl disable unattended-upgrades.service || true
+                                # Overwrite the config file to disable periodic checks
+                                echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
+                                echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
+                            """
+
+                            // Check for storage paths and add directory creation commands
+                            def storagePath = componentData.properties?.storage
+                            if (storagePath) {
+                                echo "Found storage path to create: ${storagePath}"
+                                remoteCommand += """
+                                    echo '>>> 2. Creating storage directory: ${storagePath}...'
+                                    sudo mkdir -p ${storagePath}
+                                    sudo chown -R ${deployUser}:${deployUser} ${storagePath}
+                                    sudo chmod -R 2775 ${storagePath}
+                                """
+                            } else {
+                                remoteCommand += """
+                                    echo '>>> 2. No specific storage path defined. Ensuring /data exists...'
+                                    sudo mkdir -p /data
+                                    sudo chown ${deployUser}:${deployUser} /data
+                                """
+                            }
+                            
+                            // Check for ports and add commands to free them up
+                            def componentPorts = componentData.ports?.values()
+                            if (componentPorts) {
+                                def portsString = componentPorts.join(' ')
+                                echo "Found ports to verify: ${portsString}"
+                                remoteCommand += """
+                                    echo '>>> 3. Freeing up required network ports...'
+                                    for port in ${portsString}; do
+                                        if sudo ss -tuln | grep -q ":\$port "; then
+                                            echo "Port \$port is in use. Attempting to kill the process..."
+                                            # Use fuser to kill whatever is using the port
+                                            sudo fuser -k "\${port}/tcp" || true
+                                            sleep 2
+                                        else
+                                            echo "Port \$port is free."
+                                        fi
+                                    done
+                                """
+                            } else {
+                                remoteCommand += "\n echo '>>> 3. No component-specific ports defined to check.'"
+                            }
+                            
+                            echo "Executing configuration script on ${ip}..."
+                            sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                            
+                            echo "--- Finished Component Configuration on ${ip} ---"
+                        }
+                    }
+                }
+            }
+            
         stage('Install Dependencies') {
             steps {
                 withCredentials([sshUserPrivateKey(
@@ -189,7 +263,7 @@ agent any
                                 echo "Required versions - Java: ${javaVersion}, Python: ${pythonVersion}"
                                 
                                 retry(3) {
-                                    sleep 15
+                                    // sleep 15
                                     
                                     echo "Attempting to connect to ${ip} to install dependencies..."
 
