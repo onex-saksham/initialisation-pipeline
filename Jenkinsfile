@@ -117,20 +117,22 @@ pipeline {
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
                             
-                            // *** THE NEW, ROBUST METHOD ***
-                            def remoteScriptPath = "/tmp/createUser_$(date +%s).sh"
+                            // *** THE FIX: Generate timestamp in Groovy ***
+                            def timestamp = new Date().getTime()
+                            def remoteScriptPath = "/tmp/createUser_${timestamp}.sh"
+                            
                             try {
-                                // 1. Write the script to a local file in the workspace
+                                // 1. Write the script to a local file
                                 writeFile file: 'createUser.sh', text: createUserScript
 
-                                // 2. Upload the script to the remote server
+                                // 2. Upload the script
                                 sshPut remote: initialRemote, from: 'createUser.sh', into: remoteScriptPath
 
                                 // 3. Make it executable and run it
                                 sshCommand remote: initialRemote, command: "chmod +x ${remoteScriptPath}"
                                 sshCommand remote: initialRemote, command: remoteScriptPath
                             } finally {
-                                // 4. Always clean up the remote script
+                                // 4. Always clean up
                                 echo "Cleaning up remote script..."
                                 sshCommand remote: initialRemote, command: "rm -f ${remoteScriptPath}"
                             }
