@@ -113,8 +113,8 @@ pipeline {
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
                             
-                            sh """
-                                sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<'EOF'
+                           sh """
+                                sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<EOF
                                 ${createUserScript}
                                 EOF
                             """
