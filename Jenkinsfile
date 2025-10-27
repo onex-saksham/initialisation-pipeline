@@ -168,6 +168,63 @@ agent any
                 }
             }
         }
+        
+        stage('Install Dependencies') {
+            steps {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
+                    keyFileVariable: 'JENKINS_KEY_FILE'
+                )]) {
+                    script {
+                        nodesToProvision.each { ip, details ->
+                            echo "--- Installing Dependencies on ${ip} for component: ${details.component} ---"
+
+                            // Extract component-specific details from our plan
+                            def componentData = details.data
+                            def nodePasswords = passwords[ip]
+                            def javaVersion = componentData.java_version
+                            def pythonVersion = componentData.python_version
+                            def deployUser = nodePasswords.deploy_user
+                            def sshPort = config.ssh_port ?: 22
+                            
+                            // Check if this component requires Java/Python installation
+                            if (javaVersion && pythonVersion) {
+                                echo "Required versions - Java: ${javaVersion}, Python: ${pythonVersion}"
+
+                                def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
+                                def deployHost = "${deployUser}@${ip}"
+
+                                // Step 1: Copy the installation script to the remote server
+                                echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
+                                sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+
+                                // Step 2: Execute the script remotely
+                                echo "Step 2: Executing installation script on ${ip}"
+                                def remoteCommand = """
+                                    set -e
+                                    echo 'Making script executable...'
+                                    chmod +x ${remoteScriptPath}
+                                    
+                                    echo 'Running script with sudo...'
+                                    sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
+                                    
+                                    echo 'Cleaning up script...'
+                                    rm ${remoteScriptPath}
+                                """
+                                // We pipe the multi-line command to a single ssh session for efficiency
+                                sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                                
+                                echo "Successfully installed dependencies on ${ip}"
+                            } else {
+                                echo "Skipping dependency installation for ${details.component} as versions are not specified."
+                            }
+                            echo "--- Finished Dependencies on ${ip} ---"
+                        }
+                    }
+                }
+            }
+        }
+
 
     }
 
