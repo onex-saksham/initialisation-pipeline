@@ -121,9 +121,7 @@ agent any
                             }
                             def publicKey = readFile(file: env.PUBLIC_KEY_PATH).trim()
 
-                            def deployHost = "${nodePasswords.deploy_user}@${ip}"
-                            
-                            // *** THE FIX: Escape the dollar signs for shell variables ***
+                            // *** THE FIX: Embed the public key directly into the script string ***
                             def setupSshCommand = """
                                 set -e
                                 echo 'Setting up SSH directory and authorized_keys...'
@@ -132,13 +130,16 @@ agent any
                                 touch ~/.ssh/authorized_keys
                                 chmod 600 ~/.ssh/authorized_keys
                                 echo 'Adding public key...'
-                                # Use grep to prevent adding a duplicate key
-                                grep -q -F "\$PUBLIC_KEY" ~/.ssh/authorized_keys || echo "\$PUBLIC_KEY" >> ~/.ssh/authorized_keys
+                                # The publicKey variable from Groovy is now directly part of the script
+                                # We add single quotes to handle any special characters in the key
+                                grep -q -F '${publicKey}' ~/.ssh/authorized_keys || echo '${publicKey}' >> ~/.ssh/authorized_keys
                             """
 
-                            withEnv(["PUBLIC_KEY=${publicKey}", "SETUP_COMMAND=${setupSshCommand}"]) {
-                                sh 'echo "$SETUP_COMMAND" | sshpass -p \'' + nodePasswords.deploy_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
-                            }
+                            def deployHost = "${nodePasswords.deploy_user}@${ip}"
+                            
+                            // We no longer need withEnv here, just pipe the complete script
+                            sh 'echo \'' + setupSshCommand + '\' | sshpass -p \'' + nodePasswords.deploy_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                            
 
                             echo "Step 3: Verifying passwordless SSH access"
                             def deployUser = nodePasswords.deploy_user
