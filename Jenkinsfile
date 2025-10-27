@@ -12,7 +12,6 @@ agent any
         PASSWORDS_FILE = "passwords.json" // We still read this for now
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-        // This is the ID of the SSH private key stored in Jenkins Credentials
         JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
         PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
     }
@@ -179,7 +178,6 @@ agent any
                         nodesToProvision.each { ip, details ->
                             echo "--- Installing Dependencies on ${ip} for component: ${details.component} ---"
 
-                            // Extract component-specific details from our plan
                             def componentData = details.data
                             def nodePasswords = passwords[ip]
                             def javaVersion = componentData.java_version
@@ -187,32 +185,32 @@ agent any
                             def deployUser = nodePasswords.deploy_user
                             def sshPort = config.ssh_port ?: 22
                             
-                            // Check if this component requires Java/Python installation
                             if (javaVersion && pythonVersion) {
                                 echo "Required versions - Java: ${javaVersion}, Python: ${pythonVersion}"
-
-                                def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
-                                def deployHost = "${deployUser}@${ip}"
-
-                                // Step 1: Copy the installation script to the remote server
-                                echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
-                                sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
-
-                                // Step 2: Execute the script remotely
-                                echo "Step 2: Executing installation script on ${ip}"
-                                def remoteCommand = """
-                                    set -e
-                                    echo 'Making script executable...'
-                                    chmod +x ${remoteScriptPath}
+                                
+                                // *** THE FIX: Wrap SSH commands in a retry block ***
+                                // This will try up to 3 times to connect and run the installation.
+                                retry(3) {
+                                    // Add a delay before each attempt to give the server time to start.
+                                    sleep 15
                                     
-                                    echo 'Running script with sudo...'
-                                    sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
-                                    
-                                    echo 'Cleaning up script...'
-                                    rm ${remoteScriptPath}
-                                """
-                                // We pipe the multi-line command to a single ssh session for efficiency
-                                sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                                    echo "Attempting to connect to ${ip} to install dependencies..."
+
+                                    def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
+                                    def deployHost = "${deployUser}@${ip}"
+
+                                    echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
+                                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+
+                                    echo "Step 2: Executing installation script on ${ip}"
+                                    def remoteCommand = """
+                                        set -e
+                                        chmod +x ${remoteScriptPath}
+                                        sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
+                                        rm ${remoteScriptPath}
+                                    """
+                                    sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                                }
                                 
                                 echo "Successfully installed dependencies on ${ip}"
                             } else {
