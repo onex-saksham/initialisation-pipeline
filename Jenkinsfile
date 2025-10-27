@@ -14,7 +14,7 @@ agent any
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         // This is the ID of the SSH private key stored in Jenkins Credentials
         JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
-        PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
+        PUBLIC_KEY_PATH = '/home/admin1/.ssh/id_rsa.pub'
     }
 
     stages {
