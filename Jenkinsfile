@@ -111,22 +111,38 @@ pipeline {
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
                             
-                            // *** THE FIX: Use withEnv to pass the script safely ***
                             withEnv(["REMOTE_SCRIPT=${createUserScript}"]) {
-                                // The shell command now just echoes the environment variable
                                 sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + nodePasswords.root_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
                             }
 
-                            echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
+                            // *** THE FIX: Read local public key and distribute it manually ***
+                            echo "Step 2: Distributing local SSH public key to new user on ${ip}"
+
+                            // 1. Read the public key from the Jenkins agent's filesystem
+                            def publicKey = readFile(env.PUBLIC_KEY_PATH).trim()
+
+                            // 2. Prepare the remote command to add the key securely
                             def deployHost = "${nodePasswords.deploy_user}@${ip}"
-                            
-                            sh """
-                                sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost}
+                            def setupSshCommand = """
+                                set -e
+                                echo 'Setting up SSH directory and authorized_keys...'
+                                mkdir -p ~/.ssh
+                                chmod 700 ~/.ssh
+                                touch ~/.ssh/authorized_keys
+                                chmod 600 ~/.ssh/authorized_keys
+                                echo 'Adding public key...'
+                                # Use grep to prevent adding a duplicate key
+                                grep -q -F "$PUBLIC_KEY" ~/.ssh/authorized_keys || echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys
                             """
 
+                            // 3. Execute the command on the remote host using the deploy_user's password
+                            withEnv(["PUBLIC_KEY=${publicKey}", "SETUP_COMMAND=${setupSshCommand}"]) {
+                                sh 'echo "$SETUP_COMMAND" | sshpass -p \'' + nodePasswords.deploy_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                            }
+
                             echo "Step 3: Verifying passwordless SSH access"
-                            // Since sshCommand is not available, we use a simple sh command for verification
                             def deployUser = nodePasswords.deploy_user
+                            // This verification now uses the private key from credentials, which matches the public key we just installed
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
                             echo "--- Finished Provisioning on ${ip} ---"
