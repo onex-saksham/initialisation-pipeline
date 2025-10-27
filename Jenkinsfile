@@ -13,6 +13,7 @@ pipeline {
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
     }
+    
 
     stages {
         stage('Preparation') {
