@@ -1,9 +1,5 @@
-// Jenkinsfile
-
-// Define script-level variables
 def config = [:]
 def passwords = [:]
-// This will be a Map where the value is a LIST of components, e.g., [ "10.0.0.1": [zookeeper, kafka], "10.0.0.2": [doris_be] ]
 def nodesToProvision = [:]
 
 pipeline {

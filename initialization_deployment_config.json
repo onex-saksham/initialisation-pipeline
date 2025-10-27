@@ -36,7 +36,7 @@
     "deploy_rcs": "__rcs__",
     "zookeeper": {
         "node_ip": [
-            "10.20.3.83"
+            "10.20.3.78"
         ],
         "deployment_path": "",
         "properties": {
@@ -70,7 +70,7 @@
     },
     "kafka": {
         "broker_ip": [
-            "10.20.3.83"
+            "10.20.3.78"
         ],
         "deployment_path": "",
         "properties": {
@@ -123,7 +123,7 @@
     },
     "doris_fe": {
         "node_ip": [
-            "10.20.3.83"
+            "10.20.3.78"
         ],
         "deployment_path": "",
         "properties": {
@@ -140,7 +140,7 @@
     },
     "doris_be": {
         "node_ip": [
-            "10.20.3.83"
+            "10.20.3.78"
         ],
         "deployment_path": "",
         "properties": {
@@ -178,7 +178,7 @@
         }
     },
     "monitoring": {
-        "node_ip": "10.20.3.83",
+        "node_ip": "10.20.3.78",
         "deployment_path": "",
         "properties": {
             "storage": "/data/grafana-storage"
@@ -196,7 +196,7 @@
     },
     "api": {
         "node_ip": [
-            "10.20.3.83"
+            "10.20.3.78"
         ],
         "deployment_path": "",
         "ports": {
@@ -213,7 +213,7 @@
     
     "backend_job": {
         "node_ip": [
-            "10.20.3.83"
+            "10.20.3.78"
     ],
         "ID_DESC_URL": "__ID_DESC_URL__",
         "ZIP_HOST_IP":"__ZIP_HOST_IP__",
