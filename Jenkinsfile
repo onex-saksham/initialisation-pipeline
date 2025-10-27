@@ -114,9 +114,7 @@ pipeline {
                             """
                             
                            sh """
-                                sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<EOF
-                                ${createUserScript}
-                                EOF
+                                echo "${createUserScript}" | sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s'
                             """
 
                             echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
