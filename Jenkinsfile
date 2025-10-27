@@ -14,7 +14,7 @@ pipeline {
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         // This is the ID of the SSH private key stored in Jenkins Credentials
-        JENKINS_SSH_CREDENTIALS_ID = 'jenkins-ssh-key' 
+        JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
     }
 
     stages {
