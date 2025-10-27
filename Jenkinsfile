@@ -157,23 +157,23 @@ pipeline {
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
                             // Step 4: Trigger a reboot to apply all core changes
-                            echo "Step 4: Triggering reboot on ${ip}"
-                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+                            // echo "Step 4: Triggering reboot on ${ip}"
+                            // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
-                            // Step 5: Wait for the server to come back online
-                            echo "Step 5: Waiting for ${ip} to come back online..."
-                            timeout(time: 5, unit: 'MINUTES') {
-                                waitUntil {
-                                    try {
-                                        def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
-                                        return status == 0
-                                    } catch (Exception e) { return false }
-                                }
-                            }
-                            echo "Server ${ip} is back online."
-                            sleep 10
+                            // // Step 5: Wait for the server to come back online
+                            // echo "Step 5: Waiting for ${ip} to come back online..."
+                            // timeout(time: 5, unit: 'MINUTES') {
+                            //     waitUntil {
+                            //         try {
+                            //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+                            //             return status == 0
+                            //         } catch (Exception e) { return false }
+                            //     }
+                            // }
+                            // echo "Server ${ip} is back online."
+                            // sleep 10
                             
-                            echo "--- Finished Provisioning and Reboot on ${ip} ---"
+                            // echo "--- Finished Provisioning and Reboot on ${ip} ---"
                         }
                     }
                 }
@@ -223,20 +223,35 @@ pipeline {
                                     """
                                 }
                                 
-                                // Append port-clearing commands if they exist
-                                def componentPorts = componentData.ports?.values()
-                                if (componentPorts) {
-                                    def portsString = componentPorts.join(' ')
+                            // Append port-clearing commands if they exist
+                            // Check for ports and add commands to free them up, SAFELY excluding the SSH port
+                            def componentPorts = componentData.ports?.values()
+                            if (componentPorts) {
+                                // Filter out the SSH port from the list of ports to clear
+                                def portsToClear = componentPorts.findAll { it != sshPort }
+
+                                if (!portsToClear.isEmpty()) {
+                                    def portsString = portsToClear.join(' ')
+                                    echo "Found application ports to verify: ${portsString} (SSH port ${sshPort} excluded)"
                                     remoteCommand += """
-                                        echo 'Freeing up required ports: ${portsString}...'
+                                        echo '>>> 4. Freeing up required application ports: ${portsString}...'
                                         for port in ${portsString}; do
                                             if sudo ss -tuln | grep -q ":\$port "; then
-                                                echo "Port \$port is in use, attempting to kill process..."
-                                                sudo fuser -k "\${port}/tcp" || true; sleep 2;
+                                                echo "Port \$port is in use. Attempting to kill process..."
+                                                # Use fuser to kill whatever is using the port
+                                                sudo fuser -k "\${port}/tcp" || true
+                                                sleep 2
+                                            else
+                                                echo "Port \$port is free."
                                             fi
                                         done
                                     """
+                                } else {
+                                    remoteCommand += "\n echo '>>> 4. No application-specific ports to clear (all ports were excluded).'"
                                 }
+                            } else {
+                                remoteCommand += "\n echo '>>> 4. No component-specific ports defined to check.'"
+                            }
 
                                 // Append component-specific setup commands
                                 switch (componentName) {
