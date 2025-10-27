@@ -28,7 +28,7 @@
     },
     "base_user": "jenkins",
     "user": "saksham123",
-    "deployment_type": "__deployment_type__",
+    "deployment_type": "single",
     "deployment_path": "__deployment_path__",
     "ssh_port": "22",
     "deploy_whatsapp": "__wa__",
