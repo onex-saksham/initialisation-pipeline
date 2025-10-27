@@ -1,15 +1,13 @@
 #!/bin/bash
 # Usage: ./install_java_python.sh <python_version> <java_version>
-# Example: ./install_java_python.sh 3.12 17
+# Example: ./install_java_python.sh 3.12.0 17
 
-# Note: Python version should now be in X.Y format, e.g., 3.11, 3.12
-
-PYTHON_VERSION=$1
+FULL_PYTHON_VERSION=$1
 JAVA_VERSION=$2
 
-if [ -z "$PYTHON_VERSION" ] || [ -z "$JAVA_VERSION" ]; then
+if [ -z "$FULL_PYTHON_VERSION" ] || [ -z "$JAVA_VERSION" ]; then
   echo "Usage: $0 <python_version> <java_version>"
-  echo "Example: $0 3.12 17"
+  echo "Example: $0 3.12.0 17"
   exit 1
 fi
 
@@ -21,7 +19,10 @@ sudo apt-get install -y wget curl software-properties-common
 ######################################
 #         Install Python (from PPA)        #
 ######################################
-echo ">>> Installing Python $PYTHON_VERSION using the deadsnakes PPA..."
+# *** THE FIX: Truncate the Python version string ***
+PYTHON_VERSION=$(echo "$FULL_PYTHON_VERSION" | cut -d. -f1,2)
+
+echo ">>> Installing Python ${PYTHON_VERSION} (from requested version ${FULL_PYTHON_VERSION}) using the deadsnakes PPA..."
 
 # Add the deadsnakes PPA repository
 sudo add-apt-repository ppa:deadsnakes/ppa -y
@@ -31,10 +32,8 @@ sudo apt-get update
 sudo apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv python3-pip
 
 # Use update-alternatives to make our new version the default `python3`
-# This is safer than manual symlinks.
 sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1
 sudo update-alternatives --set python3 /usr/bin/python${PYTHON_VERSION}
-
 
 ######################################
 #         Install OpenJDK (from APT)       #
