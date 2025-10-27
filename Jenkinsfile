@@ -74,9 +74,7 @@ pipeline {
         }
 
         stage('Provision Servers') {
-            steps { // The 'steps' block must be the direct child of 'stage'
-                
-                // The withCredentials block now goes INSIDE steps
+            steps {
                 withCredentials([sshUserPrivateKey(
                     credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
                     keyFileVariable: 'JENKINS_KEY_FILE'
@@ -113,11 +111,11 @@ pipeline {
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
                             
-                           sh """
-                                sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<EOF
-                                ${createUserScript}
-                                EOF
-                            """
+                            // *** THE FIX: Use withEnv to pass the script safely ***
+                            withEnv(["REMOTE_SCRIPT=${createUserScript}"]) {
+                                // The shell command now just echoes the environment variable
+                                sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + nodePasswords.root_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
+                            }
 
                             echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
                             def deployHost = "${nodePasswords.deploy_user}@${ip}"
@@ -126,17 +124,10 @@ pipeline {
                                 sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost}
                             """
 
-                            echo "Step 3: Verifying passwordless SSH access with the 'SSH Pipeline Steps' plugin"
-                            
-                            def remote = [
-                                host: ip,
-                                user: nodePasswords.deploy_user,
-                                port: sshPort,
-                                allowAnyHosts: true,
-                                credentialsId: env.JENKINS_SSH_CREDENTIALS_ID
-                            ]
-
-                            sshCommand remote: remote, command: "echo 'SSH key authentication successful via sshCommand'"
+                            echo "Step 3: Verifying passwordless SSH access"
+                            // Since sshCommand is not available, we use a simple sh command for verification
+                            def deployUser = nodePasswords.deploy_user
+                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
                             echo "--- Finished Provisioning on ${ip} ---"
                         }
