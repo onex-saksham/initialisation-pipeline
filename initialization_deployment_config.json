@@ -27,16 +27,16 @@
         ]
     },
     "base_user": "jenkins",
-    "user": "__ODP_user__",
+    "user": "saksham123",
     "deployment_type": "__deployment_type__",
     "deployment_path": "__deployment_path__",
-    "ssh_port": "__ssh_port__",
+    "ssh_port": "22",
     "deploy_whatsapp": "__wa__",
     "deploy_sms": "__sms__",
     "deploy_rcs": "__rcs__",
     "zookeeper": {
         "node_ip": [
-            "__zookeeper_ip__"
+            "10.20.3.83"
         ],
         "deployment_path": "",
         "properties": {
@@ -70,7 +70,7 @@
     },
     "kafka": {
         "broker_ip": [
-            "__kafka_ip__"
+            "10.20.3.83"
         ],
         "deployment_path": "",
         "properties": {
@@ -123,7 +123,7 @@
     },
     "doris_fe": {
         "node_ip": [
-            "__doris_fe_ip__"
+            "10.20.3.83"
         ],
         "deployment_path": "",
         "properties": {
@@ -140,7 +140,7 @@
     },
     "doris_be": {
         "node_ip": [
-            "__doris_be_ip__"
+            "10.20.3.83"
         ],
         "deployment_path": "",
         "properties": {
@@ -178,7 +178,7 @@
         }
     },
     "monitoring": {
-        "node_ip": "__monitoring_ip__",
+        "node_ip": "10.20.3.83",
         "deployment_path": "",
         "properties": {
             "storage": "/data/grafana-storage"
@@ -196,7 +196,7 @@
     },
     "api": {
         "node_ip": [
-            "__api_ip__"
+            "10.20.3.83"
         ],
         "deployment_path": "",
         "ports": {
@@ -212,7 +212,9 @@
     },
     
     "backend_job": {
-        "node_ip": ["__backend_job_ip__"],
+        "node_ip": [
+            "10.20.3.83"
+    ],
         "ID_DESC_URL": "__ID_DESC_URL__",
         "ZIP_HOST_IP":"__ZIP_HOST_IP__",
         "ZIP_USERNAME":"__ZIP_USERNAME__",
