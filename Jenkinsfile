@@ -6,7 +6,6 @@ def passwords = [:]
 def nodesToProvision = [:]
 
 pipeline {
-    agent any
 
     environment {
         CONFIG_FILE = "initialization_deployment_config.json"
@@ -15,6 +14,7 @@ pipeline {
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         // This is the ID of the SSH private key stored in Jenkins Credentials
         JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
+        PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
     }
 
     stages {
