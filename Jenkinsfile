@@ -73,78 +73,72 @@ pipeline {
             }
         }
 
-        // NEW STAGE
-stage('Provision Servers') {
-            // New 'wrappers' section to load the SSH key credential for the whole stage
-            // This replaces the sshagent block
-            wrapper {
+        stage('Provision Servers') {
+            steps { // The 'steps' block must be the direct child of 'stage'
+                
+                // The withCredentials block now goes INSIDE steps
                 withCredentials([sshUserPrivateKey(
                     credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
                     keyFileVariable: 'JENKINS_KEY_FILE'
                 )]) {
-                    steps {
-                        script {
-                            sh 'command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }'
+                    script {
+                        sh 'command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }'
 
-                            nodesToProvision.each { ip, details ->
-                                echo "--- Starting Provisioning on ${ip} for component: ${details.component} ---"
-                                
-                                def nodePasswords = passwords[ip]
-                                if (!nodePasswords) {
-                                    error "FATAL: No password configuration found for IP: ${ip}"
-                                }
-
-                                def initialHost = "${nodePasswords.root_user}@${ip}"
-                                def sshPort = config.ssh_port ?: 22
-
-                                echo "Step 1: Creating deployment user '${nodePasswords.deploy_user}' on ${ip}"
-                                def createUserScript = """
-                                    set -e
-                                    echo "Creating group and user..."
-                                    sudo groupadd -f ${nodePasswords.deploy_user}
-                                    id ${nodePasswords.deploy_user} &>/dev/null || sudo useradd -m -g ${nodePasswords.deploy_user} -s /bin/bash ${nodePasswords.deploy_user}
-                                    echo "Setting password for ${nodePasswords.deploy_user}..."
-                                    echo "${nodePasswords.deploy_user}:${nodePasswords.deploy_password}" | sudo chpasswd
-                                    echo "Granting NOPASSWD sudo privileges..."
-                                    sudo usermod -aG sudo ${nodePasswords.deploy_user}
-                                    echo "${nodePasswords.deploy_user} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${nodePasswords.deploy_user}
-                                    sudo chmod 440 /etc/sudoers.d/${nodePasswords.deploy_user}
-                                    echo "Changing root password..."
-                                    echo "root:${nodePasswords.new_root_password}" | sudo chpasswd
-                                    echo "Setting timezone to Asia/Kolkata..."
-                                    sudo timedatectl set-timezone Asia/Kolkata
-                                """
-                                
-                                sh """
-                                    sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<'EOF'
-                                    ${createUserScript}
-                                    EOF
-                                """
-
-                                echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
-                                def deployHost = "${nodePasswords.deploy_user}@${ip}"
-                                
-                                // This step now uses the key file provided by withCredentials
-                                sh """
-                                    sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost}
-                                """
-
-                                echo "Step 3: Verifying passwordless SSH access with the 'SSH Pipeline Steps' plugin"
-                                
-                                // Define the remote server for the sshCommand step
-                                def remote = [
-                                    host: ip,
-                                    user: nodePasswords.deploy_user,
-                                    port: sshPort,
-                                    allowAnyHosts: true,
-                                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID
-                                ]
-
-                                // NEW: Use sshCommand for verification
-                                sshCommand remote: remote, command: "echo 'SSH key authentication successful via sshCommand'"
-                                
-                                echo "--- Finished Provisioning on ${ip} ---"
+                        nodesToProvision.each { ip, details ->
+                            echo "--- Starting Provisioning on ${ip} for component: ${details.component} ---"
+                            
+                            def nodePasswords = passwords[ip]
+                            if (!nodePasswords) {
+                                error "FATAL: No password configuration found for IP: ${ip}"
                             }
+
+                            def initialHost = "${nodePasswords.root_user}@${ip}"
+                            def sshPort = config.ssh_port ?: 22
+
+                            echo "Step 1: Creating deployment user '${nodePasswords.deploy_user}' on ${ip}"
+                            def createUserScript = """
+                                set -e
+                                echo "Creating group and user..."
+                                sudo groupadd -f ${nodePasswords.deploy_user}
+                                id ${nodePasswords.deploy_user} &>/dev/null || sudo useradd -m -g ${nodePasswords.deploy_user} -s /bin/bash ${nodePasswords.deploy_user}
+                                echo "Setting password for ${nodePasswords.deploy_user}..."
+                                echo "${nodePasswords.deploy_user}:${nodePasswords.deploy_password}" | sudo chpasswd
+                                echo "Granting NOPASSWD sudo privileges..."
+                                sudo usermod -aG sudo ${nodePasswords.deploy_user}
+                                echo "${nodePasswords.deploy_user} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${nodePasswords.deploy_user}
+                                sudo chmod 440 /etc/sudoers.d/${nodePasswords.deploy_user}
+                                echo "Changing root password..."
+                                echo "root:${nodePasswords.new_root_password}" | sudo chpasswd
+                                echo "Setting timezone to Asia/Kolkata..."
+                                sudo timedatectl set-timezone Asia/Kolkata
+                            """
+                            
+                            sh """
+                                sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<'EOF'
+                                ${createUserScript}
+                                EOF
+                            """
+
+                            echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
+                            def deployHost = "${nodePasswords.deploy_user}@${ip}"
+                            
+                            sh """
+                                sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost}
+                            """
+
+                            echo "Step 3: Verifying passwordless SSH access with the 'SSH Pipeline Steps' plugin"
+                            
+                            def remote = [
+                                host: ip,
+                                user: nodePasswords.deploy_user,
+                                port: sshPort,
+                                allowAnyHosts: true,
+                                credentialsId: env.JENKINS_SSH_CREDENTIALS_ID
+                            ]
+
+                            sshCommand remote: remote, command: "echo 'SSH key authentication successful via sshCommand'"
+                            
+                            echo "--- Finished Provisioning on ${ip} ---"
                         }
                     }
                 }
