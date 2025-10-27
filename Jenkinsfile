@@ -15,7 +15,6 @@ pipeline {
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         // This is the ID of the SSH private key stored in Jenkins Credentials
         JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
-        JENKINS_ROOT_CREDENTIALS_ID = 'server-root-credentials'
     }
 
     stages {
@@ -75,7 +74,9 @@ pipeline {
         }
 
         stage('Provision Servers') {
-            steps {
+            steps { // The 'steps' block must be the direct child of 'stage'
+                
+                // The withCredentials block now goes INSIDE steps
                 withCredentials([sshUserPrivateKey(
                     credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
                     keyFileVariable: 'JENKINS_KEY_FILE'
@@ -91,16 +92,11 @@ pipeline {
                                 error "FATAL: No password configuration found for IP: ${ip}"
                             }
 
-                            def initialRemote = [
-                                host: ip,
-                                user: nodePasswords.root_user,
-                                port: config.ssh_port ?: 22,
-                                allowAnyHosts: true,
-                                credentialsId: env.JENKINS_ROOT_CREDENTIALS_ID 
-                            ]
+                            def initialHost = "${nodePasswords.root_user}@${ip}"
+                            def sshPort = config.ssh_port ?: 22
 
                             echo "Step 1: Creating deployment user '${nodePasswords.deploy_user}' on ${ip}"
-                            def createUserScript = """#!/bin/bash
+                            def createUserScript = """
                                 set -e
                                 echo "Creating group and user..."
                                 sudo groupadd -f ${nodePasswords.deploy_user}
@@ -117,42 +113,30 @@ pipeline {
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
                             
-                            // *** THE FIX: Generate timestamp in Groovy ***
-                            def timestamp = new Date().getTime()
-                            def remoteScriptPath = "/tmp/createUser_${timestamp}.sh"
-                            
-                            try {
-                                // 1. Write the script to a local file
-                                writeFile file: 'createUser.sh', text: createUserScript
-
-                                // 2. Upload the script
-                                sshPut remote: initialRemote, from: 'createUser.sh', into: remoteScriptPath
-
-                                // 3. Make it executable and run it
-                                sshCommand remote: initialRemote, command: "chmod +x ${remoteScriptPath}"
-                                sshCommand remote: initialRemote, command: remoteScriptPath
-                            } finally {
-                                // 4. Always clean up
-                                echo "Cleaning up remote script..."
-                                sshCommand remote: initialRemote, command: "rm -f ${remoteScriptPath}"
-                            }
+                           sh """
+                                sshpass -p '${nodePasswords.root_password}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${initialHost} 'bash -s' <<EOF
+                                ${createUserScript}
+                                EOF
+                            """
 
                             echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
                             def deployHost = "${nodePasswords.deploy_user}@${ip}"
                             
                             sh """
-                                sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${initialRemote.port} -o StrictHostKeyChecking=no ${deployHost}
+                                sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost}
                             """
 
-                            echo "Step 3: Verifying passwordless SSH access"
-                            def finalRemote = [
+                            echo "Step 3: Verifying passwordless SSH access with the 'SSH Pipeline Steps' plugin"
+                            
+                            def remote = [
                                 host: ip,
                                 user: nodePasswords.deploy_user,
-                                port: initialRemote.port,
+                                port: sshPort,
                                 allowAnyHosts: true,
                                 credentialsId: env.JENKINS_SSH_CREDENTIALS_ID
                             ]
-                            sshCommand remote: finalRemote, command: "echo 'SSH key authentication successful via sshCommand'"
+
+                            sshCommand remote: remote, command: "echo 'SSH key authentication successful via sshCommand'"
                             
                             echo "--- Finished Provisioning on ${ip} ---"
                         }
