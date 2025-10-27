@@ -73,14 +73,21 @@ agent any
             }
         }
 
-        stage('Provision Servers') {
+        stage('Provision and Reboot Servers') {
             steps {
                 withCredentials([sshUserPrivateKey(
                     credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
                     keyFileVariable: 'JENKINS_KEY_FILE'
                 )]) {
                     script {
-                        sh 'command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }'
+                        // Check for required tools and install netcat if missing
+                        sh """
+                            command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
+                            command -v nc >/dev/null 2>&1 || { 
+                                echo 'netcat (nc) not found, attempting to install it...'
+                                sudo apt-get update && sudo apt-get install -y netcat-openbsd
+                            }
+                        """
 
                         nodesToProvision.each { ip, details ->
                             echo "--- Starting Provisioning on ${ip} for component: ${details.component} ---"
@@ -89,68 +96,79 @@ agent any
                             if (!nodePasswords) {
                                 error "FATAL: No password configuration found for IP: ${ip}"
                             }
-
-                            def initialHost = "${nodePasswords.root_user}@${ip}"
                             def sshPort = config.ssh_port ?: 22
+                            def deployUser = nodePasswords.deploy_user
+                            def initialHost = "${nodePasswords.root_user}@${ip}"
 
-                            echo "Step 1: Creating deployment user '${nodePasswords.deploy_user}' on ${ip}"
+                            // Step 1: Create a non-root user for Jenkins
+                            echo "Step 1: Creating deployment user '${deployUser}' on ${ip}"
                             def createUserScript = """
                                 set -e
                                 echo "Creating group and user..."
-                                sudo groupadd -f ${nodePasswords.deploy_user}
-                                id ${nodePasswords.deploy_user} &>/dev/null || sudo useradd -m -g ${nodePasswords.deploy_user} -s /bin/bash ${nodePasswords.deploy_user}
-                                echo "Setting password for ${nodePasswords.deploy_user}..."
-                                echo "${nodePasswords.deploy_user}:${nodePasswords.deploy_password}" | sudo chpasswd
+                                sudo groupadd -f ${deployUser}
+                                id ${deployUser} &>/dev/null || sudo useradd -m -g ${deployUser} -s /bin/bash ${deployUser}
+                                echo "Setting password for ${deployUser}..."
+                                echo "${deployUser}:${nodePasswords.deploy_password}" | sudo chpasswd
                                 echo "Granting NOPASSWD sudo privileges..."
-                                sudo usermod -aG sudo ${nodePasswords.deploy_user}
-                                echo "${nodePasswords.deploy_user} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${nodePasswords.deploy_user}
-                                sudo chmod 440 /etc/sudoers.d/${nodePasswords.deploy_user}
+                                sudo usermod -aG sudo ${deployUser}
+                                echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${deployUser}
+                                sudo chmod 440 /etc/sudoers.d/${deployUser}
                                 echo "Changing root password..."
                                 echo "root:${nodePasswords.new_root_password}" | sudo chpasswd
                                 echo "Setting timezone to Asia/Kolkata..."
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
-                            
                             withEnv(["REMOTE_SCRIPT=${createUserScript}"]) {
                                 sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + nodePasswords.root_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
                             }
 
+                            // Step 2: Distribute the agent's public SSH key
                             echo "Step 2: Distributing local SSH public key to new user on ${ip}"
                             if (!fileExists(env.PUBLIC_KEY_PATH)) {
                                 error "FATAL: Public key file not found at ${env.PUBLIC_KEY_PATH} on the Jenkins agent."
                             }
                             def publicKey = readFile(file: env.PUBLIC_KEY_PATH).trim()
-
-                            // *** THE FIX: Embed the public key directly into the script string ***
                             def setupSshCommand = """
                                 set -e
-                                echo 'Setting up SSH directory and authorized_keys...'
-                                mkdir -p ~/.ssh
-                                chmod 700 ~/.ssh
-                                touch ~/.ssh/authorized_keys
-                                chmod 600 ~/.ssh/authorized_keys
-                                echo 'Adding public key...'
-                                # The publicKey variable from Groovy is now directly part of the script
-                                # We add single quotes to handle any special characters in the key
+                                mkdir -p ~/.ssh && chmod 700 ~/.ssh
+                                touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
                                 grep -q -F '${publicKey}' ~/.ssh/authorized_keys || echo '${publicKey}' >> ~/.ssh/authorized_keys
                             """
-
-                            def deployHost = "${nodePasswords.deploy_user}@${ip}"
-                            
-                            // We no longer need withEnv here, just pipe the complete script
+                            def deployHost = "${deployUser}@${ip}"
                             sh 'echo \'' + setupSshCommand + '\' | sshpass -p \'' + nodePasswords.deploy_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
                             
-
+                            // Step 3: Verify passwordless SSH access is working
                             echo "Step 3: Verifying passwordless SSH access"
-                            def deployUser = nodePasswords.deploy_user
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
-                            echo "--- Finished Provisioning on ${ip} ---"
+                            // Step 4: Trigger a reboot to apply all core changes
+                            echo "Step 4: Triggering reboot on ${ip}"
+                            // '|| true' ensures the pipeline doesn't fail when the SSH connection is severed by the reboot
+                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+
+                            // Step 5: Wait for the server to come back online
+                            echo "Step 5: Waiting for ${ip} to come back online..."
+                            timeout(time: 5, unit: 'MINUTES') {
+                                waitUntil {
+                                    try {
+                                        def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+                                        return status == 0
+                                    } catch (Exception e) {
+                                        return false
+                                    }
+                                }
+                            }
+                            echo "Server ${ip} is back online."
+                            
+                            sleep 10
+                            
+                            echo "--- Finished Provisioning and Reboot on ${ip} ---"
                         }
                     }
                 }
             }
         }
+
     }
 
     post {
