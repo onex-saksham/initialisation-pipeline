@@ -13,27 +13,33 @@ fi
 
 echo ">>> Installing base dependencies..."
 sudo apt-get update
-# software-properties-common is needed to add PPAs
 sudo apt-get install -y wget curl software-properties-common
 
 ######################################
 #         Install Python (from PPA)        #
 ######################################
-# *** THE FIX: Truncate the Python version string ***
+# Truncate the Python version string to X.Y format (e.g., 3.12.0 -> 3.12)
 PYTHON_VERSION=$(echo "$FULL_PYTHON_VERSION" | cut -d. -f1,2)
 
-echo ">>> Installing Python ${PYTHON_VERSION} (from requested version ${FULL_PYTHON_VERSION}) using the deadsnakes PPA..."
+# Check if the desired python version is already installed
+if command -v "python${PYTHON_VERSION}" &> /dev/null; then
+  echo ">>> Python ${PYTHON_VERSION} is already installed. Skipping installation."
+else
+  echo ">>> Python ${PYTHON_VERSION} not found. Installing via deadsnakes PPA..."
 
-# Add the deadsnakes PPA repository
-sudo add-apt-repository ppa:deadsnakes/ppa -y
-sudo apt-get update
+  # Add the deadsnakes PPA repository
+  sudo add-apt-repository ppa:deadsnakes/ppa -y
+  sudo apt-get update
 
-# Install the specific Python version, its dev package, venv, and pip
-sudo apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv python3-pip
+  # Install the specific Python version, its dev package, venv, and pip
+  sudo apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv python3-pip
+fi
 
-# Use update-alternatives to make our new version the default `python3`
+# This part is safe to run every time. It ensures our desired version is the default.
+echo ">>> Ensuring python${PYTHON_VERSION} is the default for 'python3'..."
 sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1
 sudo update-alternatives --set python3 /usr/bin/python${PYTHON_VERSION}
+
 
 ######################################
 #         Install OpenJDK (from APT)       #
