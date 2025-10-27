@@ -188,28 +188,43 @@ agent any
                             if (javaVersion && pythonVersion) {
                                 echo "Required versions - Java: ${javaVersion}, Python: ${pythonVersion}"
                                 
-                                // *** THE FIX: Wrap SSH commands in a retry block ***
-                                // This will try up to 3 times to connect and run the installation.
                                 retry(3) {
-                                    // Add a delay before each attempt to give the server time to start.
                                     sleep 15
                                     
                                     echo "Attempting to connect to ${ip} to install dependencies..."
 
                                     def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
+                                    def remoteLogPath = "/tmp/install_dependencies_${details.component}.log" // Define the remote log file path
                                     def deployHost = "${deployUser}@${ip}"
 
+                                    // Step 1: Copy the script to the remote server
                                     echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
                                     sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
 
-                                    echo "Step 2: Executing installation script on ${ip}"
+                                    // Step 2: Execute the script, redirecting output to the log file
+                                    echo "Step 2: Executing installation script on ${ip}. See archived artifacts for the full log."
                                     def remoteCommand = """
                                         set -e
                                         chmod +x ${remoteScriptPath}
-                                        sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
-                                        rm ${remoteScriptPath}
+                                        
+                                        # Execute the script and redirect stdout and stderr to the log file
+                                        sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion} > ${remoteLogPath} 2>&1
+                                        
+                                        echo "\\n--- Displaying last 30 lines of installation log ---"
+                                        tail -n 30 ${remoteLogPath}
+                                        echo "--- End of installation log tail ---"
                                     """
                                     sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                                    
+                                    // Step 3: Copy the full log file back to Jenkins for archiving
+                                    def localLogFile = "install_log_${ip}_${details.component}.log"
+                                    echo "Step 3: Archiving full installation log to '${localLogFile}'"
+                                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
+                                    archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
+
+                                    // Step 4: Clean up both the script and the log file on the remote server
+                                    echo "Step 4: Cleaning up temporary files on ${ip}"
+                                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
                                 }
                                 
                                 echo "Successfully installed dependencies on ${ip}"
