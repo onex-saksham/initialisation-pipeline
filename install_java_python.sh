@@ -1,37 +1,33 @@
 #!/bin/bash
 # Usage: ./install_java_python.sh <python_version> <java_version>
-# Example: ./install_java_python.sh 3.12.0 17
+# Example: ./install_java_python.sh 3.12 17
 
 FULL_PYTHON_VERSION=$1
 JAVA_VERSION=$2
 
 if [ -z "$FULL_PYTHON_VERSION" ] || [ -z "$JAVA_VERSION" ]; then
   echo "Usage: $0 <python_version> <java_version>"
-  echo "Example: $0 3.12.0 17"
+  echo "Example: $0 3.12 17"
   exit 1
 fi
 
 echo ">>> Installing base dependencies..."
 sudo apt-get update
-sudo apt-get install -y wget curl software-properties-common
+sudo apt-get install -y wget curl
 
 ######################################
-#         Install Python (from PPA)        #
+#      Install Python (from APT Only)      #
 ######################################
 # Truncate the Python version string to X.Y format (e.g., 3.12.0 -> 3.12)
 PYTHON_VERSION=$(echo "$FULL_PYTHON_VERSION" | cut -d. -f1,2)
+
+echo ">>> Attempting to install Python ${PYTHON_VERSION} from standard APT repositories..."
 
 # Check if the desired python version is already installed
 if command -v "python${PYTHON_VERSION}" &> /dev/null; then
   echo ">>> Python ${PYTHON_VERSION} is already installed. Skipping installation."
 else
-  echo ">>> Python ${PYTHON_VERSION} not found. Installing via deadsnakes PPA..."
-
-  # Add the deadsnakes PPA repository
-  sudo add-apt-repository ppa:deadsnakes/ppa -y
-  sudo apt-get update
-
-  # Install the specific Python version, its dev package, venv, and pip
+  # Install the specific Python version directly from the official repositories
   sudo apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv python3-pip
 fi
 
@@ -49,7 +45,6 @@ sudo apt-get install -y openjdk-${JAVA_VERSION}-jdk
 
 echo ">>> Locating OpenJDK installation directory..."
 JAVA_HOME_PATH=""
-# This robust logic for finding JAVA_HOME is still excellent and will be kept.
 if command -v update-alternatives &> /dev/null; then
   JAVA_HOME_PATH=$(update-alternatives --get-selections | grep "^java " | tr -s " " | cut -d " " -f 3 | sed 's|/bin/java||')
 fi
@@ -76,7 +71,6 @@ if [ -z "$JAVA_HOME_PATH" ] || [ ! -d "$JAVA_HOME_PATH" ]; then
   exit 1
 fi
 echo "Found OpenJDK at: $JAVA_HOME_PATH"
-
 ######################################
 #  Update System & User Environments #
 ######################################

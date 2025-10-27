@@ -336,12 +336,11 @@ pipeline {
     }
 
     post {
-        // This block runs at the end of the pipeline regardless of the outcome.
-        always {
-            echo "Pipeline run finished. Cleaning up workspace..."
-            // cleanWs() cleans up the Jenkins agent's workspace to save disk space.
-            cleanWs()
-        }
+        // always {
+        //     echo "Pipeline run finished. Cleaning up workspace..."
+        //     // cleanWs() cleans up the Jenkins agent's workspace to save disk space.
+        //     cleanWs()
+        // }
         success {
             echo "Pipeline completed successfully!"
         }
