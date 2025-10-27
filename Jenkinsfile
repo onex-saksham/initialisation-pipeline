@@ -91,17 +91,16 @@ pipeline {
                                 error "FATAL: No password configuration found for IP: ${ip}"
                             }
 
-                            // Define the remote server for the initial password-based connection
                             def initialRemote = [
                                 host: ip,
                                 user: nodePasswords.root_user,
                                 port: config.ssh_port ?: 22,
                                 allowAnyHosts: true,
-                                credentialsId: env.JENKINS_ROOT_CREDENTIALS_ID // Use the new credential
+                                credentialsId: env.JENKINS_ROOT_CREDENTIALS_ID 
                             ]
 
                             echo "Step 1: Creating deployment user '${nodePasswords.deploy_user}' on ${ip}"
-                            def createUserScript = """
+                            def createUserScript = """#!/bin/bash
                                 set -e
                                 echo "Creating group and user..."
                                 sudo groupadd -f ${nodePasswords.deploy_user}
@@ -118,28 +117,39 @@ pipeline {
                                 sudo timedatectl set-timezone Asia/Kolkata
                             """
                             
-                            // *** THE FIX: Use sshScript for reliable remote execution ***
-                            sshScript remote: initialRemote, script: createUserScript
+                            // *** THE NEW, ROBUST METHOD ***
+                            def remoteScriptPath = "/tmp/createUser_$(date +%s).sh"
+                            try {
+                                // 1. Write the script to a local file in the workspace
+                                writeFile file: 'createUser.sh', text: createUserScript
+
+                                // 2. Upload the script to the remote server
+                                sshPut remote: initialRemote, from: 'createUser.sh', into: remoteScriptPath
+
+                                // 3. Make it executable and run it
+                                sshCommand remote: initialRemote, command: "chmod +x ${remoteScriptPath}"
+                                sshCommand remote: initialRemote, command: remoteScriptPath
+                            } finally {
+                                // 4. Always clean up the remote script
+                                echo "Cleaning up remote script..."
+                                sshCommand remote: initialRemote, command: "rm -f ${remoteScriptPath}"
+                            }
 
                             echo "Step 2: Distributing Jenkins SSH key to new user on ${ip}"
                             def deployHost = "${nodePasswords.deploy_user}@${ip}"
                             
-                            // We still use sshpass here as it's a simple way to use the deploy_password
                             sh """
                                 sshpass -p '${nodePasswords.deploy_password}' ssh-copy-id -i ${JENKINS_KEY_FILE} -p ${initialRemote.port} -o StrictHostKeyChecking=no ${deployHost}
                             """
 
-                            echo "Step 3: Verifying passwordless SSH access with the 'SSH Pipeline Steps' plugin"
-                            
-                            // Define the remote for the final key-based verification
+                            echo "Step 3: Verifying passwordless SSH access"
                             def finalRemote = [
                                 host: ip,
                                 user: nodePasswords.deploy_user,
                                 port: initialRemote.port,
                                 allowAnyHosts: true,
-                                credentialsId: env.JENKINS_SSH_CREDENTIALS_ID // The SSH key credential
+                                credentialsId: env.JENKINS_SSH_CREDENTIALS_ID
                             ]
-
                             sshCommand remote: finalRemote, command: "echo 'SSH key authentication successful via sshCommand'"
                             
                             echo "--- Finished Provisioning on ${ip} ---"
