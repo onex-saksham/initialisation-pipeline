@@ -179,11 +179,12 @@ agent any
                             echo "--- Configuring Component on ${ip} for: ${details.component} ---"
 
                             def componentData = details.data
+                            def componentName = details.component
                             def deployUser = passwords[ip].deploy_user
                             def sshPort = config.ssh_port ?: 22
                             def deployHost = "${deployUser}@${ip}"
 
-                            // Use single quotes for the script to prevent Groovy from interpreting dollar signs
+                            // Start building the remote script
                             def remoteCommand = '''
                                 set -e
                                 echo '>>> 1. Disabling automatic unattended upgrades...'
@@ -191,46 +192,76 @@ agent any
                                 sudo systemctl disable unattended-upgrades.service || true
                                 echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
                                 echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
+                                
+                                echo '>>> 2. Updating package lists...'
+                                sudo apt-get update -y
                             '''
 
+                            // Check for storage paths
                             def storagePath = componentData.properties?.storage
                             if (storagePath) {
                                 remoteCommand += """
-                                    echo '>>> 2. Creating storage directory: ${storagePath}...'
+                                    echo '>>> 3. Creating storage directory: ${storagePath}...'
                                     sudo mkdir -p ${storagePath}
                                     sudo chown -R ${deployUser}:${deployUser} ${storagePath}
                                     sudo chmod -R 2775 ${storagePath}
                                 """
                             } else {
                                 remoteCommand += """
-                                    echo '>>> 2. No specific storage path defined. Ensuring /data exists...'
+                                    echo '>>> 3. No specific storage path defined. Ensuring /data exists...'
                                     sudo mkdir -p /data
                                     sudo chown ${deployUser}:${deployUser} /data
                                 """
                             }
                             
+                            // Check for ports to free up
                             def componentPorts = componentData.ports?.values()
                             if (componentPorts) {
-                                // We still build this part with double quotes to insert the Groovy variable
                                 def portsString = componentPorts.join(' ')
                                 remoteCommand += """
-                                    echo '>>> 3. Freeing up required network ports...'
+                                    echo '>>> 4. Freeing up required network ports...'
                                     for port in ${portsString}; do
                                         if sudo ss -tuln | grep -q ":\$port "; then
                                             echo "Port \$port is in use. Attempting to kill the process..."
                                             sudo fuser -k "\${port}/tcp" || true
                                             sleep 2
-                                        else
-                                            echo "Port \$port is free."
                                         fi
                                     done
                                 """
                             } else {
-                                remoteCommand += "\n echo '>>> 3. No component-specific ports defined to check.'"
+                                remoteCommand += "\n echo '>>> 4. No component-specific ports defined to check.'"
+                            }
+
+                            // *** NEW SECTION: Add component-specific commands ***
+                            remoteCommand += "\n echo '>>> 5. Running component-specific setup for ${componentName}...'"
+                            switch (componentName) {
+                                case 'backend_job':
+                                    remoteCommand += """
+                                        sudo apt-get install -y build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev
+                                    """
+                                    break
+                                case 'doris_be':
+                                    remoteCommand += '''
+                                        echo "Setting vm.max_map_count..."
+                                        sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
+                                        sudo sysctl --system
+                                        
+                                        echo "Disabling swap..."
+                                        sudo swapoff -a
+                                        sudo sed -i '/swap/d' /etc/fstab
+                                    '''
+                                    break
+                                case 'kafka':
+                                    remoteCommand += """
+                                        sudo apt-get install -y kcat
+                                    """
+                                    break
+                                default:
+                                    remoteCommand += "\n echo 'No additional setup required for this component.'"
+                                    break
                             }
                             
-                            echo "Executing configuration script on ${ip}..."
-                            // Use the safe withEnv pattern to execute the script
+                            echo "Executing final configuration script on ${ip}..."
                             withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
                                 sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
                             }
@@ -242,57 +273,57 @@ agent any
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
-                    keyFileVariable: 'JENKINS_KEY_FILE'
-                )]) {
-                    script {
-                        nodesToProvision.each { ip, details ->
-                            echo "--- Installing Dependencies on ${ip} for component: ${details.component} ---"
+        // stage('Install Dependencies') {
+        //     steps {
+        //         withCredentials([sshUserPrivateKey(
+        //             credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
+        //             keyFileVariable: 'JENKINS_KEY_FILE'
+        //         )]) {
+        //             script {
+        //                 nodesToProvision.each { ip, details ->
+        //                     echo "--- Installing Dependencies on ${ip} for component: ${details.component} ---"
 
-                            def componentData = details.data
-                            def nodePasswords = passwords[ip]
-                            def javaVersion = componentData.java_version
-                            def pythonVersion = componentData.python_version
-                            def deployUser = nodePasswords.deploy_user
-                            def sshPort = config.ssh_port ?: 22
+        //                     def componentData = details.data
+        //                     def nodePasswords = passwords[ip]
+        //                     def javaVersion = componentData.java_version
+        //                     def pythonVersion = componentData.python_version
+        //                     def deployUser = nodePasswords.deploy_user
+        //                     def sshPort = config.ssh_port ?: 22
                             
-                            if (javaVersion && pythonVersion) {
-                                echo "Required versions - Java: ${javaVersion}, Python: ${pythonVersion}"
+        //                     if (javaVersion && pythonVersion) {
+        //                         echo "Required versions - Java: ${javaVersion}, Python: ${pythonVersion}"
                                 
-                                retry(3) {
-                                    // sleep 15
+        //                         retry(3) {
+        //                             // sleep 15
                                     
-                                    echo "Attempting to connect to ${ip} to install dependencies..."
+        //                             echo "Attempting to connect to ${ip} to install dependencies..."
 
-                                    def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
-                                    def deployHost = "${deployUser}@${ip}"
+        //                             def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
+        //                             def deployHost = "${deployUser}@${ip}"
 
-                                    echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
-                                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+        //                             echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
+        //                             sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
 
-                                    echo "Step 2: Executing installation script on ${ip}"
-                                    def remoteCommand = """
-                                        set -e
-                                        chmod +x ${remoteScriptPath}
-                                        sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
-                                        rm ${remoteScriptPath}
-                                    """
-                                    sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
-                                }
+        //                             echo "Step 2: Executing installation script on ${ip}"
+        //                             def remoteCommand = """
+        //                                 set -e
+        //                                 chmod +x ${remoteScriptPath}
+        //                                 sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
+        //                                 rm ${remoteScriptPath}
+        //                             """
+        //                             sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+        //                         }
                                 
-                                echo "Successfully installed dependencies on ${ip}"
-                            } else {
-                                echo "Skipping dependency installation for ${details.component} as versions are not specified."
-                            }
-                            echo "--- Finished Dependencies on ${ip} ---"
-                        }
-                    }
-                }
-            }
-        }
+        //                         echo "Successfully installed dependencies on ${ip}"
+        //                     } else {
+        //                         echo "Skipping dependency installation for ${details.component} as versions are not specified."
+        //                     }
+        //                     echo "--- Finished Dependencies on ${ip} ---"
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
 
     }
