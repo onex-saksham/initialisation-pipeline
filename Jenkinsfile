@@ -167,6 +167,7 @@ agent any
                 }
             }
         }
+
         stage('Configure Components') {
             steps {
                 withCredentials([sshUserPrivateKey(
@@ -182,21 +183,18 @@ agent any
                             def sshPort = config.ssh_port ?: 22
                             def deployHost = "${deployUser}@${ip}"
 
-                            // Dynamically build the remote script
-                            def remoteCommand = """
+                            // Use single quotes for the script to prevent Groovy from interpreting dollar signs
+                            def remoteCommand = '''
                                 set -e
                                 echo '>>> 1. Disabling automatic unattended upgrades...'
                                 sudo systemctl stop unattended-upgrades.service || true
                                 sudo systemctl disable unattended-upgrades.service || true
-                                # Overwrite the config file to disable periodic checks
                                 echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
                                 echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
-                            """
+                            '''
 
-                            // Check for storage paths and add directory creation commands
                             def storagePath = componentData.properties?.storage
                             if (storagePath) {
-                                echo "Found storage path to create: ${storagePath}"
                                 remoteCommand += """
                                     echo '>>> 2. Creating storage directory: ${storagePath}...'
                                     sudo mkdir -p ${storagePath}
@@ -211,17 +209,15 @@ agent any
                                 """
                             }
                             
-                            // Check for ports and add commands to free them up
                             def componentPorts = componentData.ports?.values()
                             if (componentPorts) {
+                                // We still build this part with double quotes to insert the Groovy variable
                                 def portsString = componentPorts.join(' ')
-                                echo "Found ports to verify: ${portsString}"
                                 remoteCommand += """
                                     echo '>>> 3. Freeing up required network ports...'
                                     for port in ${portsString}; do
                                         if sudo ss -tuln | grep -q ":\$port "; then
                                             echo "Port \$port is in use. Attempting to kill the process..."
-                                            # Use fuser to kill whatever is using the port
                                             sudo fuser -k "\${port}/tcp" || true
                                             sleep 2
                                         else
@@ -234,7 +230,10 @@ agent any
                             }
                             
                             echo "Executing configuration script on ${ip}..."
-                            sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                            // Use the safe withEnv pattern to execute the script
+                            withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
+                                sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+                            }
                             
                             echo "--- Finished Component Configuration on ${ip} ---"
                         }
