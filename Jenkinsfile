@@ -86,7 +86,6 @@ pipeline {
                     keyFileVariable: 'JENKINS_KEY_FILE'
                 )]) {
                     script {
-                        // Check for required tools on the Jenkins agent and install netcat if missing
                         sh """
                             command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
                             command -v nc >/dev/null 2>&1 || { 
@@ -95,7 +94,6 @@ pipeline {
                             }
                         """
 
-                        // This loop runs ONCE per unique IP, which is correct for this per-server stage.
                         nodesToProvision.each { ip, componentList ->
                             echo "--- Starting Provisioning on ${ip} ---"
                             
@@ -105,28 +103,36 @@ pipeline {
                             }
                             def sshPort = config.ssh_port ?: 22
                             def deployUser = nodePasswords.deploy_user
-                            def initialHost = "${nodePasswords.root_user}@${ip}"
+                            def initialUser = nodePasswords.root_user
+                            def initialPass = nodePasswords.root_password
+                            def initialHost = "${initialUser}@${ip}"
 
                             // Step 1: Create a non-root user for Jenkins (runs once per server)
                             echo "Step 1: Creating deployment user '${deployUser}' on ${ip}"
+                            
+                            // *** THE FIX: Add 'echo | sudo -S' to every sudo command ***
                             def createUserScript = """
                                 set -e
                                 echo "Creating group and user..."
-                                sudo groupadd -f ${deployUser}
-                                id ${deployUser} &>/dev/null || sudo useradd -m -g ${deployUser} -s /bin/bash ${deployUser}
+                                echo '${initialPass}' | sudo -S groupadd -f ${deployUser}
+                                echo '${initialPass}' | sudo -S id ${deployUser} &>/dev/null || sudo -S useradd -m -g ${deployUser} -s /bin/bash ${deployUser}
+                                
                                 echo "Setting password for ${deployUser}..."
-                                echo "${deployUser}:${nodePasswords.deploy_password}" | sudo chpasswd
+                                echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser}:${nodePasswords.deploy_password}" | chpasswd'
+                                
                                 echo "Granting NOPASSWD sudo privileges..."
-                                sudo usermod -aG sudo ${deployUser}
-                                echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${deployUser}
-                                sudo chmod 440 /etc/sudoers.d/${deployUser}
+                                echo '${initialPass}' | sudo -S usermod -aG sudo ${deployUser}
+                                echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/${deployUser}'
+                                echo '${initialPass}' | sudo -S chmod 440 /etc/sudoers.d/${deployUser}
+                                
                                 echo "Changing root password..."
-                                echo "root:${nodePasswords.new_root_password}" | sudo chpasswd
+                                echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'
+                                
                                 echo "Setting timezone to Asia/Kolkata..."
-                                sudo timedatectl set-timezone Asia/Kolkata
+                                echo '${initialPass}' | sudo -S timedatectl set-timezone Asia/Kolkata
                             """
                             withEnv(["REMOTE_SCRIPT=${createUserScript}"]) {
-                                sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + nodePasswords.root_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
+                                sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + initialPass + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
                             }
 
                             // Step 2: Distribute the agent's public SSH key (runs once per server)
