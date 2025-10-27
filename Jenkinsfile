@@ -3,13 +3,14 @@
 // Define script-level variables
 def config = [:]
 def passwords = [:]
+// This will be a Map where the value is a LIST of components, e.g., [ "10.0.0.1": [zookeeper, kafka], "10.0.0.2": [doris_be] ]
 def nodesToProvision = [:]
 
 pipeline {
-agent any
+    agent any
     environment {
         CONFIG_FILE = "initialization_deployment_config.json"
-        PASSWORDS_FILE = "passwords.json" // We still read this for now
+        PASSWORDS_FILE = "passwords.json"
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
@@ -20,21 +21,21 @@ agent any
         stage('Preparation') {
             steps {
                 script {
-                    echo "Checking out source code..."
+                    echo "Checking out source code from SCM..."
                     checkout scm
 
-                    echo "Loading deployment configuration..."
-                    if (fileExists(env.CONFIG_FILE)) {
-                        config = readJSON file: env.CONFIG_FILE
-                    } else {
-                        error "FATAL: Configuration file '${env.CONFIG_FILE}' not found!"
+                    echo "Loading deployment configuration from ${env.CONFIG_FILE}..."
+                    if (fileExists(env.CONFIG_FILE)) { 
+                        config = readJSON file: env.CONFIG_FILE 
+                    } else { 
+                        error "FATAL: Config file '${env.CONFIG_FILE}' not found!" 
                     }
 
-                    echo "Loading passwords file..."
-                    if (fileExists(env.PASSWORDS_FILE)) {
-                        passwords = readJSON file: env.PASSWORDS_FILE
-                    } else {
-                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!"
+                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
+                    if (fileExists(env.PASSWORDS_FILE)) { 
+                        passwords = readJSON file: env.PASSWORDS_FILE 
+                    } else { 
+                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
                     }
                 }
             }
@@ -43,9 +44,11 @@ agent any
         stage('Identify Target Nodes') {
             steps {
                 script {
-                    echo "Parsing configuration to identify all target nodes..."
+                    echo "Parsing configuration to build deployment plan..."
                     def excludedKeys = ['releases', 'base_user', 'user', 'deployment_type', 'deployment_path', 'deploy', 'ssh_port']
 
+                    // This logic correctly handles both 'single' and 'multi' deployment types
+                    // by grouping all components by their assigned IP address.
                     config.each { componentName, componentData ->
                         if (!(componentName in excludedKeys) && (componentData instanceof Map)) {
                             def ips = []
@@ -57,7 +60,7 @@ agent any
                             }
                             ips.unique().each { ip ->
                                 if (ip && ip instanceof String && !ip.startsWith('_')) {
-                                    // If this is the first time we've seen this IP, initialize its list
+                                    // If this is the first time we've seen this IP, initialize its list of components
                                     if (!nodesToProvision.containsKey(ip)) {
                                         nodesToProvision[ip] = []
                                     }
@@ -87,17 +90,18 @@ agent any
                     keyFileVariable: 'JENKINS_KEY_FILE'
                 )]) {
                     script {
-                        // Check for required tools and install netcat if missing
+                        // Check for required tools on the Jenkins agent and install netcat if missing
                         sh """
                             command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
                             command -v nc >/dev/null 2>&1 || { 
-                                echo 'netcat (nc) not found, attempting to install it...'
+                                echo 'netcat (nc) not found on agent, attempting to install it...'
                                 sudo apt-get update && sudo apt-get install -y netcat-openbsd
                             }
                         """
 
+                        // This loop runs ONCE per unique IP, which is correct for this per-server stage.
                         nodesToProvision.each { ip, componentList ->
-                            echo "--- Starting Provisioning on ${ip} for component: ${details.component} ---"
+                            echo "--- Starting Provisioning on ${ip} ---"
                             
                             def nodePasswords = passwords[ip]
                             if (!nodePasswords) {
@@ -107,7 +111,7 @@ agent any
                             def deployUser = nodePasswords.deploy_user
                             def initialHost = "${nodePasswords.root_user}@${ip}"
 
-                            // Step 1: Create a non-root user for Jenkins
+                            // Step 1: Create a non-root user for Jenkins (runs once per server)
                             echo "Step 1: Creating deployment user '${deployUser}' on ${ip}"
                             def createUserScript = """
                                 set -e
@@ -129,7 +133,7 @@ agent any
                                 sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + nodePasswords.root_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
                             }
 
-                            // Step 2: Distribute the agent's public SSH key
+                            // Step 2: Distribute the agent's public SSH key (runs once per server)
                             echo "Step 2: Distributing local SSH public key to new user on ${ip}"
                             if (!fileExists(env.PUBLIC_KEY_PATH)) {
                                 error "FATAL: Public key file not found at ${env.PUBLIC_KEY_PATH} on the Jenkins agent."
@@ -137,8 +141,10 @@ agent any
                             def publicKey = readFile(file: env.PUBLIC_KEY_PATH).trim()
                             def setupSshCommand = """
                                 set -e
+                                echo 'Setting up SSH directory and authorized_keys file...'
                                 mkdir -p ~/.ssh && chmod 700 ~/.ssh
                                 touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+                                echo 'Adding public key to authorized_keys...'
                                 grep -q -F "${publicKey}" ~/.ssh/authorized_keys || echo '${publicKey}' >> ~/.ssh/authorized_keys
                             """
                             def deployHost = "${deployUser}@${ip}"
@@ -148,28 +154,24 @@ agent any
                             echo "Step 3: Verifying passwordless SSH access"
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
-                            // // Step 4: Trigger a reboot to apply all core changes
-                            // echo "Step 4: Triggering reboot on ${ip}"
-                            // // '|| true' ensures the pipeline doesn't fail when the SSH connection is severed by the reboot
-                            // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+                            // Step 4: Trigger a reboot to apply all core changes
+                            echo "Step 4: Triggering reboot on ${ip}"
+                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
-                            // // Step 5: Wait for the server to come back online
-                            // echo "Step 5: Waiting for ${ip} to come back online..."
-                            // timeout(time: 5, unit: 'MINUTES') {
-                            //     waitUntil {
-                            //         try {
-                            //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
-                            //             return status == 0
-                            //         } catch (Exception e) {
-                            //             return false
-                            //         }
-                            //     }
-                            // }
-                            // echo "Server ${ip} is back online."
+                            // Step 5: Wait for the server to come back online
+                            echo "Step 5: Waiting for ${ip} to come back online..."
+                            timeout(time: 5, unit: 'MINUTES') {
+                                waitUntil {
+                                    try {
+                                        def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+                                        return status == 0
+                                    } catch (Exception e) { return false }
+                                }
+                            }
+                            echo "Server ${ip} is back online."
+                            sleep 10
                             
-                            // sleep 10
-                            
-                            // echo "--- Finished Provisioning and Reboot on ${ip} ---"
+                            echo "--- Finished Provisioning and Reboot on ${ip} ---"
                         }
                     }
                 }
@@ -186,7 +188,6 @@ agent any
                         // Outer loop: Iterate through each server ONCE.
                         nodesToProvision.each { ip, componentList ->
                             echo "--- Configuring ALL Components on ${ip} ---"
-
                             def deployUser = passwords[ip].deploy_user
                             def sshPort = config.ssh_port ?: 22
                             def deployHost = "${deployUser}@${ip}"
@@ -209,7 +210,7 @@ agent any
                                 def componentData = componentDetails.data
                                 echo " -> Adding configuration for component: ${componentName}"
 
-                                // Append storage directory commands
+                                // Append storage directory commands if they exist
                                 def storagePath = componentData.properties?.storage
                                 if (storagePath) {
                                     remoteCommand += """
@@ -220,7 +221,7 @@ agent any
                                     """
                                 }
                                 
-                                // Append port-clearing commands
+                                // Append port-clearing commands if they exist
                                 def componentPorts = componentData.ports?.values()
                                 if (componentPorts) {
                                     def portsString = componentPorts.join(' ')
@@ -228,7 +229,8 @@ agent any
                                         echo 'Freeing up required ports: ${portsString}...'
                                         for port in ${portsString}; do
                                             if sudo ss -tuln | grep -q ":\$port "; then
-                                                sudo fuser -k "\${port}/tcp" || true;
+                                                echo "Port \$port is in use, attempting to kill process..."
+                                                sudo fuser -k "\${port}/tcp" || true; sleep 2;
                                             fi
                                         done
                                     """
@@ -237,24 +239,19 @@ agent any
                                 // Append component-specific setup commands
                                 switch (componentName) {
                                     case 'backend_job':
-                                        remoteCommand += """
-                                            echo 'Installing build-essential for backend_job...'
-                                            export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3-dev zlib1g-dev libssl-dev
-                                        """
+                                        remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3-dev zlib1g-dev libssl-dev\n"
                                         break
                                     case 'doris_be':
                                         remoteCommand += '''
                                             echo 'Applying doris_be kernel settings...'
                                             sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
                                             sudo sysctl --system
+                                            echo 'Disabling swap...'
                                             sudo swapoff -a && sudo sed -i '/swap/d' /etc/fstab
                                         '''
                                         break
                                     case 'kafka':
-                                        remoteCommand += """
-                                            echo 'Installing kcat for kafka...'
-                                            sudo apt-get install -y kcat
-                                        """
+                                        remoteCommand += "echo 'Installing kcat for kafka...' && sudo apt-get install -y kcat\n"
                                         break
                                 }
                             }
@@ -263,7 +260,6 @@ agent any
                             withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
                                 sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
                             }
-                            
                             echo "--- Finished All Component Configurations on ${ip} ---"
                         }
                     }
@@ -271,74 +267,86 @@ agent any
             }
         }
 
-        // stage('Install Dependencies') {
-        //     steps {
-        //         withCredentials([sshUserPrivateKey(
-        //             credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
-        //             keyFileVariable: 'JENKINS_KEY_FILE'
-        //         )]) {
-        //             script {
-        //                 // This loop runs ONCE per unique IP, which is correct.
-        //                 nodesToProvision.each { ip, componentList ->
-        //                     echo "--- Installing Common Dependencies on ${ip} ---"
-
-        //                     // Find the FIRST component on this IP that specifies versions.
-        //                     def primaryComponent = componentList.find { it.data.java_version && it.data.python_version }
+        stage('Install Dependencies') {
+            steps {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
+                    keyFileVariable: 'JENKINS_KEY_FILE'
+                )]) {
+                    script {
+                        // This loop runs ONCE per unique IP, which is correct.
+                        nodesToProvision.each { ip, componentList ->
+                            echo "--- Installing Common Dependencies on ${ip} ---"
+                            // Find the FIRST component on this IP that specifies versions to avoid redundant installs.
+                            def primaryComponent = componentList.find { it.data.java_version && it.data.python_version }
                             
-        //                     if (primaryComponent) {
-        //                         def javaVersion = primaryComponent.data.java_version
-        //                         def pythonVersion = primaryComponent.data.python_version
-        //                         def deployUser = passwords[ip].deploy_user
-        //                         def sshPort = config.ssh_port ?: 22
+                            if (primaryComponent) {
+                                def javaVersion = primaryComponent.data.java_version
+                                def pythonVersion = primaryComponent.data.python_version
+                                def deployUser = passwords[ip].deploy_user
+                                def sshPort = config.ssh_port ?: 22
+                                def deployHost = "${deployUser}@${ip}"
 
-        //                         echo "Required versions (from component '${primaryComponent.component}') - Java: ${javaVersion}, Python: ${pythonVersion}"
+                                echo "Required versions (sourced from component '${primaryComponent.component}') - Java: ${javaVersion}, Python: ${pythonVersion}"
                                 
-        //                         retry(3) {
-        //                             sleep 10
+                                // This block will retry up to 3 times if the server isn't fully ready after reboot.
+                                retry(3) {
+                                    // Add a delay before each attempt to give the server's SSH service time to initialize.
+                                    sleep 10
+                                    echo "Attempting to connect to ${ip} to install dependencies..."
+                                    def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
+                                    def remoteLogPath = "/tmp/install_dependencies.log"
+
+                                    // Step 1: Copy the installation script to the remote server
+                                    echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
+                                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+
+                                    // Step 2: Execute the script, redirecting verbose output to a log file
+                                    echo "Step 2: Executing installation script on ${ip}. See archived artifacts for full log."
+                                    def remoteCommand = """
+                                        set -e
+                                        chmod +x ${remoteScriptPath}
+                                        sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion} > ${remoteLogPath} 2>&1
+                                        echo "\\n--- Displaying last 30 lines of installation log ---"
+                                        tail -n 30 ${remoteLogPath}
+                                        echo "--- End of installation log tail ---"
+                                    """
+                                    sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
                                     
-        //                             echo "Attempting to connect to ${ip} to install dependencies..."
+                                    // Step 3: Copy the full log file back to Jenkins for archiving
+                                    def localLogFile = "install_log_${ip}.log"
+                                    echo "Step 3: Archiving full installation log to '${localLogFile}'"
+                                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
+                                    archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
 
-        //                             def remoteScriptPath = "/tmp/${env.JAVA_PYTHON_SCRIPT}"
-        //                             def deployHost = "${deployUser}@${ip}"
-
-        //                             echo "Step 1: Copying '${env.JAVA_PYTHON_SCRIPT}' to ${ip}"
-        //                             sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${env.JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
-
-        //                             echo "Step 2: Executing installation script on ${ip}"
-        //                             def remoteCommand = """
-        //                                 set -e
-        //                                 chmod +x ${remoteScriptPath}
-        //                                 sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion}
-        //                                 rm ${remoteScriptPath}
-        //                             """
-        //                             sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
-        //                         }
+                                    // Step 4: Clean up temporary files on the remote server
+                                    echo "Step 4: Cleaning up temporary files on ${ip}"
+                                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
+                                }
                                 
-        //                         echo "Successfully installed dependencies on ${ip}"
-        //                     } else {
-        //                         echo "Skipping dependency installation for ${details.component} as versions are not specified."
-        //                     }
-        //                     echo "--- Finished Dependencies on ${ip} ---"
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
-
+                                echo "Successfully installed dependencies on ${ip}"
+                            } else {
+                                echo "Skipping dependency installation for ${ip} as no versions were specified by any component."
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     post {
-        // I've commented out the cleanWs() for now to make debugging easier.
-        // We can re-enable it once the pipeline is working.
-        // always {
-        //     cleanWs()
-        // }
+        // This block runs at the end of the pipeline regardless of the outcome.
+        always {
+            echo "Pipeline run finished. Cleaning up workspace..."
+            // cleanWs() cleans up the Jenkins agent's workspace to save disk space.
+            cleanWs()
+        }
         success {
             echo "Pipeline completed successfully!"
         }
         failure {
-            echo "Pipeline failed. Please check the logs."
+            echo "Pipeline failed. Please check the logs and build artifacts."
         }
     }
 }
