@@ -6,7 +6,7 @@ def passwords = [:]
 def nodesToProvision = [:]
 
 pipeline {
-
+agent any
     environment {
         CONFIG_FILE = "initialization_deployment_config.json"
         PASSWORDS_FILE = "passwords.json" // We still read this for now
