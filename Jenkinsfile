@@ -41,7 +41,7 @@ pipeline {
             steps {
                 script {
                     echo "Parsing configuration to build deployment plan..."
-                    def excludedKeys = ['releases', 'base_user', 'user', 'deployment_type', 'deployment_path', 'deploy', 'ssh_port']
+                    def excludedKeys = ['deployment_type', 'ssh_port']
 
                     // This logic correctly handles both 'single' and 'multi' deployment types
                     // by grouping all components by their assigned IP address.
@@ -203,7 +203,7 @@ pipeline {
                                 echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
                                 echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
                                 echo '>>> Updating package lists...'
-                                sudo apt-get update -y
+                                sudo apt-get update -y || true
                             '''
 
                             // Inner loop: Iterate through EACH component planned for this IP.
