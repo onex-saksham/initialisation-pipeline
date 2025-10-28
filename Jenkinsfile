@@ -17,48 +17,90 @@ pipeline {
         stage('Preparation') {
             steps {
                 script {
-                    echo "Checking out source code from SCM..."
-                    checkout scm
+                    try {
+                        echo "🔍 Checking out source code from SCM..."
+                        checkout scm
 
-                    // Detect changed files between commits
-                    def changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD", returnStdout: true).trim().split('\n')
-                    echo "Changed files: ${changedFiles}"
+                        // Detect changed files between commits
+                        def changedFilesRaw = sh(script: "git diff --name-only HEAD~1 HEAD", returnStdout: true).trim()
+                        if (!changedFilesRaw) {
+                            error "No changed files detected between commits."
+                        }
+                        def changedFiles = changedFilesRaw.split('\n')
+                        echo "Changed files: ${changedFiles}"
 
-                    // Find all subdirectories under 'config/'
-                    def configDirs = sh(script: "ls -d config/*/ 2>/dev/null || true", returnStdout: true).trim().split('\n')
-                    configDirs = configDirs.collect { it.replaceAll('config/', '').replaceAll('/', '') }.findAll { it } // Clean names
+                        // Find all subdirectories under 'config/'
+                        def configDirsRaw = sh(script: "ls -d config/*/ 2>/dev/null || true", returnStdout: true).trim()
+                        if (!configDirsRaw) {
+                            error "No environment directories found under config/."
+                        }
 
-                    echo "Detected environment directories: ${configDirs}"
+                        def configDirs = configDirsRaw.split('\n')
+                            .collect { it.replaceAll('config/', '').replaceAll('/', '') }
+                            .findAll { it }
 
-                    // Try to detect which env was modified
-                    def envDir = configDirs.find { env ->
-                        changedFiles.any { it.startsWith("config/${env}/") }
-                    }
+                        echo "Detected environment directories: ${configDirs}"
 
-                    if (!envDir) {
-                        echo "No environment-specific config directory modified. Defaulting to DEV."
-                        envDir = 'dev'
-                    }
+                        // Validate directory names (only letters, numbers, hyphen, underscore)
+                        def invalidDirs = configDirs.findAll { !it.matches('^[A-Za-z0-9_-]+$') }
+                        if (invalidDirs) {
+                            error "Invalid environment directory names detected: ${invalidDirs}. Please rename them using only letters, numbers, hyphens, or underscores."
+                        }
 
-                    echo "Using environment: ${envDir.toUpperCase()}"
-                    env.ENVIRONMENT = envDir
+                        // Try to detect which env was modified
+                        def changedEnvs = configDirs.findAll { env ->
+                            changedFiles.any { it.startsWith("config/${env}/") }
+                        }
 
-                    // Optionally load its config
-                    def configFilePath = "config/${envDir}/initialization_config.json"
-                    if (fileExists(configFilePath)) {
-                        config = readJSON file: configFilePath  // removed 'def'
+                        if (changedEnvs.size() == 0) {
+                            error "No environment-specific config directory modified. Skipping pipeline."
+                        } else if (changedEnvs.size() > 1) {
+                            error "Multiple environment directories modified in one commit: ${changedEnvs}. Please modify only one environment per pipeline run."
+                        }
+
+                        def envDir = changedEnvs[0]
+                        echo "Using environment: ${envDir.toUpperCase()}"
+                        env.ENVIRONMENT = envDir
+
+                        // Load configuration file
+                        def configFilePath = "config/${envDir}/initialization_config.json"
+                        if (!fileExists(configFilePath)) {
+                            error "Config file not found at ${configFilePath}"
+                        }
+
+                        def configContent = readFile(configFilePath).trim()
+                        if (!configContent) {
+                            error "Configuration file at ${configFilePath} is empty!"
+                        }
+
+                        // Try parsing JSON (catch malformed)
+                        try {
+                            config = readJSON text: configContent
+                        } catch (Exception e) {
+                            error "Malformed JSON in ${configFilePath}: ${e.message}"
+                        }
+
                         echo "Loaded configuration from ${configFilePath}"
                         env.CONFIG = config
-                    } else {
-                        echo "No config file found at ${configFilePath}"
-                    }
-                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
-                    if (fileExists(env.PASSWORDS_FILE)) { 
-                        passwords = readJSON file: env.PASSWORDS_FILE 
-                    } else { 
-                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
-                    }
 
+                        // Load passwords file (if provided)
+                        echo "Loading passwords file from ${env.PASSWORDS_FILE ?: 'undefined'}..."
+                        if (!env.PASSWORDS_FILE) {
+                            error "PASSWORDS_FILE environment variable not set!"
+                        }
+                        if (fileExists(env.PASSWORDS_FILE)) { 
+                            passwords = readJSON file: env.PASSWORDS_FILE 
+                        } else { 
+                            error "Passwords file '${env.PASSWORDS_FILE}' not found!" 
+                        }
+
+                        echo "Preparation stage completed successfully."
+
+                    } catch (err) {
+                        echo "Preparation failed: ${err.getMessage()}"
+                        currentBuild.result = 'FAILURE'
+                        error("Skipping pipeline due to fatal preparation error.")
+                    }
                 }
             }
         }
