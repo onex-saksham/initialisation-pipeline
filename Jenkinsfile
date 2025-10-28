@@ -88,24 +88,27 @@ node {
         }
 
         stage('Fetch SSH Key from Vault') {
-            echo "Fetching Jenkins SSH private key from Vault..."
-            def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
-            def secretsToFetch = [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ]
+            steps {
+                script {
+                    echo "Fetching Jenkins SSH private key from Vault..."
 
-            withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
-            def encodedKey = env.SSH_PRIVATE_KEY_CONTENT?.trim()
-            def decodedKey = new String(encodedKey.decodeBase64()).trim()
+                    withVault(configuration: [vaultUrl: 'https://vault.example.com',
+                                            vaultCredentialId: 'vault-approle',
+                                            engineVersion: 2],
+                            vaultSecrets: [[path: 'secret/initialization/jenkins/ssh_key', secretValues: [[envVar: 'VAULT_SSH_KEY', vaultKey: 'private_key']]]]) {
 
-            writeFile(file: JENKINS_KEY_FILE, text: decodedKey)
-            sh "chmod 600 ${JENKINS_KEY_FILE}"
-
-            echo "✅ Decoded SSH key from Vault and wrote to ${JENKINS_KEY_FILE}"
-}
+                        // Write base64 value to file and decode it safely via shell
+                        writeFile file: 'key.b64', text: "${VAULT_SSH_KEY}"
+                        sh '''
+                            cat key.b64 | base64 -d > jenkins_key_from_vault.pem
+                            chmod 600 jenkins_key_from_vault.pem
+                            echo "✅ Key decoded successfully"
+                        '''
+                    }
+                }
+            }
         }
+
 
         stage('Identify Target Nodes') {
             echo "Parsing configuration to build deployment plan..."
