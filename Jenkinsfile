@@ -97,7 +97,7 @@ node {
             ]
 
             withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
-                writeFile(file: JENKINS_KEY_FILE, text: env.SSH_PRIVATE_KEY_CONTENT)
+                writeFile(file: JENKINS_KEY_FILE, text: new String(env.SSH_PRIVATE_KEY_CONTENT.decodeBase64()))
                 sh "chmod 600 ${JENKINS_KEY_FILE}"
             }
             echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
