@@ -128,15 +128,23 @@ node {
         }
 
         stage('Provision and Reboot Servers') {
-            withVault(vaultSecrets: [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
-                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
-                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
-                sh "chmod 600 ${JENKINS_KEY_FILE}"
-                
+            def vaultConfig = [
+                        vaultCredentialId: VAULT_CREDENTIAL_ID
+                    ]
+
+                    // 2. Define the secrets to fetch
+                    def secretsToFetch = [
+                        [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
+                            [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
+                        ]]
+                    ]
+                    
+                    // 3. Call withVault with the correct structured map
+                    withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
+                        // This block will now execute correctly
+                        writeFile(file: JENKINS_KEY_FILE, text: env.SSH_PRIVATE_KEY_CONTENT)
+                        sh "chmod 600 ${JENKINS_KEY_FILE}"
+                    }
                 sh """
                     command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
                     command -v nc >/dev/null 2>&1 || {
