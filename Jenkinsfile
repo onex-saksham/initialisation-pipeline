@@ -36,22 +36,23 @@ pipeline {
                     }
 
                     if (!envDir) {
-                        echo "⚠️ No environment-specific config directory modified. Defaulting to DEV."
+                        echo "No environment-specific config directory modified. Defaulting to DEV."
                         envDir = 'dev'
                     }
 
-                    echo "✅ Using environment: ${envDir.toUpperCase()}"
+                    echo "Using environment: ${envDir.toUpperCase()}"
                     env.ENVIRONMENT = envDir
 
                     // Optionally load its config
                     def configFilePath = "config/${envDir}/initialization_config.json"
                     if (fileExists(configFilePath)) {
-                        def config = readJSON file: configFilePath
+                        config = readJSON file: configFilePath  // removed 'def'
                         echo "Loaded configuration from ${configFilePath}"
                         env.CONFIG = config
                     } else {
-                        echo "⚠️ No config file found at ${configFilePath}"
+                        echo "No config file found at ${configFilePath}"
                     }
+
                 }
             }
         }
