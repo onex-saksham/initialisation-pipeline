@@ -5,6 +5,8 @@ def nodesToProvision = [:]
 pipeline {
     agent any
     environment {
+        CONFIG_BASE_PATH = "config"
+        TARGET_ENV = ""
         CONFIG_FILE = "initialization_deployment_config.json"
         PASSWORDS_FILE = "passwords.json"
         SUDO_COMMANDS_DIR = "sudo_commands"
@@ -20,18 +22,44 @@ pipeline {
                     echo "Checking out source code from SCM..."
                     checkout scm
 
-                    echo "Loading deployment configuration from ${env.CONFIG_FILE}..."
-                    if (fileExists(env.CONFIG_FILE)) { 
-                        config = readJSON file: env.CONFIG_FILE 
+                    // --- STEP 1: Determine the Target Environment from Changelog ---
+                    def changedPaths = []
+                    currentBuild.changeSets.each { set ->
+                        set.paths.each { path ->
+                            changedPaths.add(path.path)
+                        }
+                    }
+                    
+                    // Logic: Find the first file path that starts with 'config/' and extract the directory name (e.g., 'prod').
+                    def detectedEnv = changedPaths.find { it.startsWith("${env.CONFIG_BASE_PATH}/") }?.tokenize('/')?.get(1)
+
+                    if (!detectedEnv) {
+                        error "FATAL: Could not determine target environment. Commit must include a change within '${env.CONFIG_BASE_PATH}/<env>/' (e.g., config/dev/)."
+                    }
+                    
+                    // Set the global environment variable for later stages
+                    env.TARGET_ENV = detectedEnv
+                    echo "--> Determined Target Environment: ${env.TARGET_ENV}"
+
+
+                    // --- STEP 2: Dynamically Construct and Load Config Paths ---
+                    def dynamicConfigPath = "${env.CONFIG_BASE_PATH}/${env.TARGET_ENV}/${env.CONFIG_FILE}"
+                    def dynamicPasswordsPath = "${env.CONFIG_BASE_PATH}/${env.TARGET_ENV}/${env.PASSWORDS_FILE}"
+
+                    // Load Configuration
+                    echo "Loading deployment configuration from ${dynamicConfigPath}..."
+                    if (fileExists(dynamicConfigPath)) { 
+                        config = readJSON file: dynamicConfigPath
                     } else { 
-                        error "FATAL: Config file '${env.CONFIG_FILE}' not found!" 
+                        error "FATAL: Config file '${dynamicConfigPath}' not found for environment ${env.TARGET_ENV}!" 
                     }
 
-                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
-                    if (fileExists(env.PASSWORDS_FILE)) { 
-                        passwords = readJSON file: env.PASSWORDS_FILE 
+                    // Load Passwords
+                    echo "Loading passwords file from ${dynamicPasswordsPath}..."
+                    if (fileExists(dynamicPasswordsPath)) { 
+                        passwords = readJSON file: dynamicPasswordsPath
                     } else { 
-                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
+                        error "FATAL: Passwords file '${dynamicPasswordsPath}' not found for environment ${env.TARGET_ENV}!" 
                     }
                 }
             }
@@ -370,7 +398,7 @@ pipeline {
                         // Check if this is a multi-node deployment. If not, skip this stage.
                         if (nodesToProvision.size() <= 1) {
                             echo "Skipping inter-service SSH configuration for single-node deployment."
-                            return // Exit the stage
+                            return 
                         }
 
                         echo "--- Starting Inter-Service SSH Configuration ---"
