@@ -154,12 +154,11 @@ pipeline {
                     [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                         [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                     ]]
-                ], vaultCredentialId: env.VAULT_CREDENTIAL_ID) {
+                ], credentialsId: env.VAULT_CREDENTIAL_ID) { // <-- This is the correct parameter name
                     script {
                         writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                         def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
                         sh "chmod 600 ${JENKINS_KEY_FILE}"
-                        
                         sh """
                             command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
                             command -v nc >/dev/null 2>&1 || { 
