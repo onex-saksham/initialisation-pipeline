@@ -150,11 +150,11 @@ pipeline {
 
         stage('Provision and Reboot Servers') {
             steps {
-                withVault(vaultCredentialId: env.VAULT_CREDENTIAL_ID, vaultSecrets: [
+                withVault(vaultSecrets: [
                     [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                         [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                     ]]
-                ]) {
+                ], vaultCredentialId: env.VAULT_CREDENTIAL_ID){
                     script {
                         // Create a temporary file for the SSH private key from Vault.
                         writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
