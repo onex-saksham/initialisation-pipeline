@@ -1,3 +1,6 @@
+def config = [:]
+def passwords = [:]
+def nodesToProvision = [:]
 
 pipeline {
     agent any
@@ -18,9 +21,6 @@ pipeline {
                     try {
                         echo "🔍 Checking out source code from SCM..."
                         checkout scm
-                        def config = [:]
-                        def passwords = [:]
-                        def nodesToProvision = [:]
 
                         // Detect changed files between commits
                         def changedFilesRaw = sh(script: "git diff --name-only HEAD~1 HEAD", returnStdout: true).trim()
