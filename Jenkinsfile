@@ -132,7 +132,8 @@ node {
                 [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                     [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                 ]]
-            ], credentialsId: VAULT_CREDENTIAL_ID) {
+            ], credentialsId: VAULT_CREDENTIAL_ID) 
+                {
                 writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                 def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
                 sh "chmod 600 ${JENKINS_KEY_FILE}"
@@ -239,10 +240,15 @@ node {
         }
 
         stage('Configure Components') {
-            withCredentials([sshUserPrivateKey(
-                credentialsId: JENKINS_SSH_CREDENTIALS_ID,
-                keyFileVariable: 'JENKINS_KEY_FILE'
-            )]) {
+            withVault(vaultSecrets: [
+                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
+                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
+                ]]
+            ], credentialsId: VAULT_CREDENTIAL_ID) 
+                {
+                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
+                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
+                sh "chmod 600 ${JENKINS_KEY_FILE}"
                 // Outer loop: Iterate through each server ONCE.
                 nodesToProvision.each { ip, componentList ->
                     echo "--- Configuring ALL Components on ${ip} ---"
@@ -339,10 +345,15 @@ node {
         }
 
         stage('Install Dependencies') {
-            withCredentials([sshUserPrivateKey(
-                credentialsId: JENKINS_SSH_CREDENTIALS_ID,
-                keyFileVariable: 'JENKINS_KEY_FILE'
-            )]) {
+            withVault(vaultSecrets: [
+                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
+                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
+                ]]
+            ], credentialsId: VAULT_CREDENTIAL_ID) 
+                {
+                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
+                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
+                sh "chmod 600 ${JENKINS_KEY_FILE}"
                 // This loop runs ONCE per unique IP, which is correct.
                 nodesToProvision.each { ip, componentList ->
                     echo "--- Installing Common Dependencies on ${ip} ---"
@@ -402,10 +413,15 @@ node {
         }
 
         stage('Configure Inter-Service SSH') {
-            withCredentials([sshUserPrivateKey(
-                credentialsId: JENKINS_SSH_CREDENTIALS_ID,
-                keyFileVariable: 'JENKINS_KEY_FILE'
-            )]) {
+            withVault(vaultSecrets: [
+                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
+                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
+                ]]
+            ], credentialsId: VAULT_CREDENTIAL_ID) 
+                {
+                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
+                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
+                sh "chmod 600 ${JENKINS_KEY_FILE}"
                 // Check if this is a multi-node deployment. If not, skip this stage.
                 if (nodesToProvision.size() <= 1) {
                     echo "Skipping inter-service SSH configuration for single-node deployment."
@@ -491,10 +507,9 @@ node {
             }
         }
     } catch (err) {
-        // This 'catch' block replaces the 'failure' post-condition
         echo "Pipeline failed. Please check the logs and build artifacts."
         currentBuild.result = 'FAILURE'
-        throw err // Re-throw the error to ensure the pipeline is marked as failed
+        throw err 
     } finally {
         // This 'finally' block replaces the 'always' post-condition
         if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
@@ -502,8 +517,7 @@ node {
             echo "Pipeline completed successfully!"
         }
         
-        echo "Pipeline run finished. Cleaning up workspace..."
-        // cleanWs() cleans up the Jenkins agent's workspace to save disk space.
-        cleanWs()
+        // echo "Pipeline run finished. Cleaning up workspace..."
+        // cleanWs()
     }
 }
