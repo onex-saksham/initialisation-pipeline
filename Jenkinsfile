@@ -102,6 +102,59 @@ node {
             }
             echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
         }
+        stage('Fetch Passwords from Vault') {
+            echo "Fetching per-node passwords from Vault for environment: ${env.ENVIRONMENT}"
+
+            // Minimal vault configuration (reuse your VAULT_CREDENTIAL_ID)
+            def vaultConfig = [ vaultCredentialId: VAULT_CREDENTIAL_ID ]
+
+            // Iterate each discovered IP and pull its secret from Vault
+            nodesToProvision.keySet().each { ip ->
+                echo " -> Fetching passwords for node ${ip} from Vault path: secret/initialization/nodes/${env.ENVIRONMENT}/${ip}"
+
+                def secretsToFetch = [
+                    [
+                        path: "secret/initialization/nodes/${env.ENVIRONMENT}/${ip}",
+                        engineVersion: 2,
+                        secretValues: [
+                            [envVar: 'VAULT_ROOT_USER',       vaultKey: 'root_user'],
+                            [envVar: 'VAULT_ROOT_PASSWORD',   vaultKey: 'root_password'],
+                            [envVar: 'VAULT_NEW_ROOT_PASS',   vaultKey: 'new_root_password'],
+                            [envVar: 'VAULT_DEPLOY_USER',     vaultKey: 'deploy_user'],
+                            [envVar: 'VAULT_DEPLOY_PASSWORD', vaultKey: 'deploy_password']
+                        ]
+                    ]
+                ]
+
+                // Use withVault for this IP — the env.* variables will be available inside the closure
+                withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
+                    // Initialize map for this IP
+                    passwords[ip] = [:]
+
+                    // Assign values from the temporary env vars populated by withVault
+                    passwords[ip].root_user         = env.VAULT_ROOT_USER?.trim()
+                    passwords[ip].root_password     = env.VAULT_ROOT_PASSWORD?.trim()
+                    passwords[ip].new_root_password = env.VAULT_NEW_ROOT_PASS?.trim()
+                    passwords[ip].deploy_user       = env.VAULT_DEPLOY_USER?.trim()
+                    passwords[ip].deploy_password   = env.VAULT_DEPLOY_PASSWORD?.trim()
+
+                    // Basic validation: ensure required fields exist
+                    def missing = []
+                    ['root_user','root_password','new_root_password','deploy_user','deploy_password'].each { key ->
+                        if (!passwords[ip][key]) { missing << key }
+                    }
+
+                    if (missing) {
+                        error("FATAL: Missing password fields for ${ip} from Vault: ${missing}. Check Vault secret at secret/initialization/nodes/${env.ENVIRONMENT}/${ip}")
+                    } else {
+                        echo "Fetched passwords for ${ip} (deploy_user=${passwords[ip].deploy_user})"
+                    }
+                } // end withVault
+            } // end each ip
+
+            echo "All passwords fetched from Vault and stored in memory."
+        }
+
 
         stage('Identify Target Nodes') {
             echo "Parsing configuration to build deployment plan..."
