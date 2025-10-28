@@ -166,29 +166,23 @@ node {
                         set -e
                         echo "Creating group and user..."
                         echo '${initialPass}' | sudo -S groupadd -f ${deployUser}
-                        echo '${initialPass}' | sudo -S id ${deployUser} &>/dev/null || sudo -S useradd -m -g ${deployUser} -s /bin/bash ${deployUser}
-                        
+                        echo '${initialPass}' | sudo -S id ${deployUser} &>/dev/null || sudo -S useradd -m -g ${deployUser} -s /bin/bash ${deployUser}                        
                         echo "Setting password for ${deployUser}..."
-                        echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser}:${nodePasswords.deploy_password}" | chpasswd'
-                        
+                        echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser}:${nodePasswords.deploy_password}" | chpasswd'                        
                         echo "Granting NOPASSWD sudo privileges..."
                         echo '${initialPass}' | sudo -S usermod -aG sudo ${deployUser}
                         echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/${deployUser}'
                         echo '${initialPass}' | sudo -S chmod 440 /etc/sudoers.d/${deployUser}
                         echo "Enabling user services to run after logout..."
                         echo '${initialPass}' | sudo -S loginctl enable-linger ${deployUser}
-
                         echo "Creating directories for systemd user services..."
                         echo '${initialPass}' | sudo -S mkdir -p /home/${deployUser}/.config/systemd/user
                         echo '${initialPass}' | sudo -S chown -R ${deployUser}:${deployUser} /home/${deployUser}/.config
-                        echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config
-                        
+                        echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config                        
                         echo "Setting secure permissions on home directory..."
-                        echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}
-                        
+                        echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}                        
                         echo "Changing root password..."
-                        echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'
-                        
+                        echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
                         echo "Setting timezone to Asia/Kolkata..."
                         echo '${initialPass}' | sudo -S timedatectl set-timezone Asia/Kolkata
                     """
