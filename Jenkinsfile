@@ -9,47 +9,58 @@ pipeline {
         PASSWORDS_FILE = "passwords.json"
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-        JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
+        JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key'
         PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
     }
 
     stages {
-                stage('Preparation') {
+        stage('Preparation') {
             steps {
                 script {
                     echo "Checking out source code from SCM..."
                     checkout scm
 
-                    // 🔍 Determine which environment (dev or prod) the commit affected
-                    def changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim().split('\n')
-                    def isDevCommit = changedFiles.any { it.startsWith('config/dev/') }
-                    def isProdCommit = changedFiles.any { it.startsWith('config/prod/') }
+                    // get list of changed files safely
+                    def changedFilesRaw = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim()
+                    if (!changedFilesRaw) {
+                        error "❌ No changed files found between commits — cannot determine config automatically."
+                    }
 
-                    if (isDevCommit && !isProdCommit) {
-                        env.CONFIG_FILE = "config/dev/initialization_config.json"
-                        echo "Detected changes in DEV config — using ${env.CONFIG_FILE}"
-                    } else if (isProdCommit && !isDevCommit) {
-                        env.CONFIG_FILE = "config/prod/initialization_config.json"
-                        echo "Detected changes in PROD config — using ${env.CONFIG_FILE}"
-                    } else if (isDevCommit && isProdCommit) {
-                        error "FATAL: Both dev and prod configs were modified in the same commit. Please commit separately."
+                    def changedFiles = changedFilesRaw.split('\n')
+                    def envMap = [
+                        "dev"   : "config/dev/initialization_config.json",
+                        "prod"  : "config/prod/initialization_config.json",
+                        "single": "config/single/initialization_config.json"
+                    ]
+
+                    def matchedEnvs = envMap.findAll { key, path ->
+                        changedFiles.any { it.startsWith("config/${key}/") }
+                    }.collect { it.key }
+
+                    if (matchedEnvs.size() == 1) {
+                        def selected = matchedEnvs[0]
+                        env.CONFIG_FILE = envMap[selected]
+                        echo "✅ Detected environment: ${selected.toUpperCase()} (${env.CONFIG_FILE})"
+                    } else if (matchedEnvs.size() > 1) {
+                        error "❌ Multiple environments modified in one commit: ${matchedEnvs}. Commit separately."
                     } else {
-                        echo "No environment-specific config changes detected. Defaulting to DEV."
-                        env.CONFIG_FILE = "config/dev/initialization_config.json"
+                        error "❌ No environment-specific config directory modified (expected one of: dev, prod, single)."
                     }
 
-                    echo "Loading deployment configuration from ${env.CONFIG_FILE}..."
-                    if (fileExists(env.CONFIG_FILE)) { 
-                        config = readJSON file: env.CONFIG_FILE 
-                    } else { 
-                        error "FATAL: Config file '${env.CONFIG_FILE}' not found!" 
+                    // read config JSON
+                    echo "Loading configuration from ${env.CONFIG_FILE}..."
+                    if (fileExists(env.CONFIG_FILE)) {
+                        config = readJSON file: env.CONFIG_FILE
+                    } else {
+                        error "❌ Config file '${env.CONFIG_FILE}' not found in repo!"
                     }
 
-                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
-                    if (fileExists(env.PASSWORDS_FILE)) { 
-                        passwords = readJSON file: env.PASSWORDS_FILE 
-                    } else { 
-                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
+                    // read passwords JSON
+                    echo "Loading passwords from ${env.PASSWORDS_FILE}..."
+                    if (fileExists(env.PASSWORDS_FILE)) {
+                        passwords = readJSON file: env.PASSWORDS_FILE
+                    } else {
+                        error "❌ Passwords file '${env.PASSWORDS_FILE}' not found!"
                     }
                 }
             }
