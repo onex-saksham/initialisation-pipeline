@@ -132,7 +132,7 @@ node {
                 [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                     [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                 ]]
-            ], credentialsId: VAULT_CREDENTIAL_ID) 
+            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
                 {
                 writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                 def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
@@ -238,7 +238,7 @@ node {
                 [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                     [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                 ]]
-            ], credentialsId: VAULT_CREDENTIAL_ID) 
+            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
                 {
                 writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                 def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
@@ -343,7 +343,7 @@ node {
                 [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                     [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                 ]]
-            ], credentialsId: VAULT_CREDENTIAL_ID) 
+            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
                 {
                 writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                 def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
@@ -411,7 +411,7 @@ node {
                 [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                     [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                 ]]
-            ], credentialsId: VAULT_CREDENTIAL_ID) 
+            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
                 {
                 writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                 def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
