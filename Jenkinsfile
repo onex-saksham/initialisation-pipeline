@@ -97,14 +97,10 @@ node {
             ]
 
             withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
-            def encodedKey = env.SSH_PRIVATE_KEY_CONTENT?.trim()
-            def decodedKey = new String(encodedKey.decodeBase64()).trim()
-
-            writeFile(file: JENKINS_KEY_FILE, text: decodedKey)
-            sh "chmod 600 ${JENKINS_KEY_FILE}"
-
-            echo "✅ Decoded SSH key from Vault and wrote to ${JENKINS_KEY_FILE}"
-}
+                writeFile(file: JENKINS_KEY_FILE, text: env.SSH_PRIVATE_KEY_CONTENT)
+                sh "chmod 600 ${JENKINS_KEY_FILE}"
+            }
+            echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
         }
 
         stage('Identify Target Nodes') {
