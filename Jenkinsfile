@@ -11,7 +11,6 @@ pipeline {
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
         PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
-        VAULT_CREDENTIAL_ID = 'vault-approle-credential'
     }
 
     stages {
@@ -28,12 +27,12 @@ pipeline {
                         error "FATAL: Config file '${env.CONFIG_FILE}' not found!" 
                     }
 
-                    // echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
-                    // if (fileExists(env.PASSWORDS_FILE)) { 
-                    //     passwords = readJSON file: env.PASSWORDS_FILE 
-                    // } else { 
-                    //     error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
-                    // }
+                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
+                    if (fileExists(env.PASSWORDS_FILE)) { 
+                        passwords = readJSON file: env.PASSWORDS_FILE 
+                    } else { 
+                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
+                    }
                 }
             }
         }
@@ -82,20 +81,15 @@ pipeline {
 
         stage('Provision and Reboot Servers') {
             steps {
-                withVault(vaultCredentialId: env.VAULT_CREDENTIAL_ID, vaultSecrets: [
-                    [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                        [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                    ]]
-                ]) {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: env.JENKINS_SSH_CREDENTIALS_ID,
+                    keyFileVariable: 'JENKINS_KEY_FILE'
+                )]) {
                     script {
-                        // Create a temporary file for the SSH private key from Vault
-                        writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
-                        def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
-                        sh "chmod 600 ${JENKINS_KEY_FILE}"
-                        
                         sh """
-                            command -v sshpass >/dev/null 2>&1 || { exit 1; }
+                            command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
                             command -v nc >/dev/null 2>&1 || { 
+                                echo 'netcat (nc) not found on agent, attempting to install it...'
                                 sudo apt-get update && sudo apt-get install -y netcat-openbsd
                             }
                         """
@@ -103,23 +97,10 @@ pipeline {
                         nodesToProvision.each { ip, componentList ->
                             echo "--- Starting Provisioning on ${ip} ---"
                             
-                            // *** THE FIX: Fetch node-specific passwords directly from Vault ***
-                            def primaryComponent = componentList.find { it.data.vault_path_name }
-                            if (!primaryComponent) {
-                                error "FATAL: No 'vault_path_name' defined in config for any component on IP: ${ip}"
-                            }
-                            def vaultPathName = primaryComponent.data.vault_path_name
-                            echo "Fetching credentials for '${vaultPathName}' (IP: ${ip}) from Vault..."
-                            
-                            def nodePasswords = vault(
-                                path: "secret/initialization/nodes/${vaultPathName}", 
-                                engineVersion: 2, 
-                                vaultCredentialId: env.VAULT_CREDENTIAL_ID
-                            )
+                            def nodePasswords = passwords[ip]
                             if (!nodePasswords) {
-                                error "FATAL: No secrets found in Vault at path for '${vaultPathName}'"
+                                error "FATAL: No password configuration found for IP: ${ip}"
                             }
-                            
                             def sshPort = config.ssh_port ?: 22
                             def deployUser = nodePasswords.deploy_user
                             def initialUser = nodePasswords.root_user
@@ -154,9 +135,7 @@ pipeline {
                                 sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + initialPass + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
                             }
 
-                            // The rest of the stage logic is correct and requires no changes
-                            
-                            // Step 2: Distribute the agent's public SSH key
+                            // Step 2: Distribute the agent's public SSH key (runs once per server)
                             echo "Step 2: Distributing local SSH public key to new user on ${ip}"
                             if (!fileExists(env.PUBLIC_KEY_PATH)) {
                                 error "FATAL: Public key file not found at ${env.PUBLIC_KEY_PATH} on the Jenkins agent."
@@ -177,10 +156,11 @@ pipeline {
                             echo "Step 3: Verifying passwordless SSH access"
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                             
-                            // *** MISSING STEP: Re-enable the Reboot Logic ***
+                            Step 4: Trigger a reboot to apply all core changes
                             echo "Step 4: Triggering reboot on ${ip}"
                             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
+                            // Step 5: Wait for the server to come back online
                             echo "Step 5: Waiting for ${ip} to come back online..."
                             timeout(time: 5, unit: 'MINUTES') {
                                 waitUntil {
@@ -466,11 +446,11 @@ pipeline {
     }
 
     post {
-        // always {
-        //     echo "Pipeline run finished. Cleaning up workspace..."
-        //     // cleanWs() cleans up the Jenkins agent's workspace to save disk space.
-        //     cleanWs()
-        // }
+        always {
+            echo "Pipeline run finished. Cleaning up workspace..."
+            // cleanWs() cleans up the Jenkins agent's workspace to save disk space.
+            cleanWs()
+        }
         success {
             echo "Pipeline completed successfully!"
         }
