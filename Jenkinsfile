@@ -24,13 +24,28 @@ pipeline {
 
                     // --- STEP 1: Determine the Target Environment from Changelog ---
                     def changedPaths = []
-                    currentBuild.changeSets.each { set ->
-                        set.paths.each { path ->
-                            changedPaths.add(path.path)
+                    
+                    // The correct way to iterate over changeSets is to access the items,
+                    // and then get the file paths from each item.
+                    currentBuild.changeSets.each { changeSet ->
+                        changeSet.items.each { item ->
+                            item.paths.each { path -> // This is the correct property for Git ChangeSetItem
+                                changedPaths.add(path)
+                            }
                         }
                     }
                     
-                    // Logic: Find the first file path that starts with 'config/' and extract the directory name (e.g., 'prod').
+                    // Fallback logic for Git Plugin version compatibility:
+                    if (changedPaths.isEmpty() && !currentBuild.changeSets.isEmpty()) {
+                        currentBuild.changeSets.each { changeSet ->
+                             changeSet.items.each { item ->
+                                 // Access paths using Groovy's GPath for maximum compatibility
+                                 changedPaths.addAll(item.get('paths') ?: []) 
+                             }
+                        }
+                    }
+                    
+                    // Logic to find the first change that specifies an environment
                     def detectedEnv = changedPaths.find { it.startsWith("${env.CONFIG_BASE_PATH}/") }?.tokenize('/')?.get(1)
 
                     if (!detectedEnv) {
