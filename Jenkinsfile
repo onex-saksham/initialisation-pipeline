@@ -110,7 +110,6 @@ pipeline {
                             // Step 1: Create a non-root user for Jenkins (runs once per server)
                             echo "Step 1: Creating deployment user '${deployUser}' on ${ip}"
                             
-                            // *** THE FIX: Add 'echo | sudo -S' to every sudo command ***
                             def createUserScript = """
                                 set -e
                                 echo "Creating group and user..."
@@ -124,6 +123,17 @@ pipeline {
                                 echo '${initialPass}' | sudo -S usermod -aG sudo ${deployUser}
                                 echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/${deployUser}'
                                 echo '${initialPass}' | sudo -S chmod 440 /etc/sudoers.d/${deployUser}
+
+                                echo "Enabling user services to run after logout..."
+                                echo '${initialPass}' | sudo -S loginctl enable-linger ${deployUser}
+
+                                echo "Creating directories for systemd user services..."
+                                echo '${initialPass}' | sudo -S mkdir -p /home/${deployUser}/.config/systemd/user
+                                echo '${initialPass}' | sudo -S chown -R ${deployUser}:${deployUser} /home/${deployUser}/.config
+                                echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config
+                                
+                                echo "Setting secure permissions on home directory..."
+                                echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}
                                 
                                 echo "Changing root password..."
                                 echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'
@@ -154,11 +164,11 @@ pipeline {
                             
                             // Step 3: Verify passwordless SSH access is working
                             echo "Step 3: Verifying passwordless SSH access"
-                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
+                            sh 'ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployUser + '@' + ip + ' \'echo SSH key authentication successful\''
                             
                             Step 4: Trigger a reboot to apply all core changes
                             echo "Step 4: Triggering reboot on ${ip}"
-                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+                            sh 'ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployUser + '@' + ip + ' \'sudo reboot\' || true'
 
                             // Step 5: Wait for the server to come back online
                             echo "Step 5: Waiting for ${ip} to come back online..."
