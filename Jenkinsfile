@@ -5,9 +5,7 @@ def nodesToProvision = [:]
 pipeline {
     agent any
     environment {
-        CONFIG_BASE_PATH = "config"
-        TARGET_ENV = ""
-        CONFIG_FILE = "initialization_deployment_config.json"
+        CONFIG_FILE = ""
         PASSWORDS_FILE = "passwords.json"
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
@@ -16,65 +14,42 @@ pipeline {
     }
 
     stages {
-        stage('Preparation') {
+                stage('Preparation') {
             steps {
                 script {
                     echo "Checking out source code from SCM..."
                     checkout scm
 
-                    // --- STEP 1: Determine the Target Environment from Changelog ---
-                    def changedPaths = []
-                    
-                    // The correct way to iterate over changeSets is to access the items,
-                    // and then get the file paths from each item.
-                    currentBuild.changeSets.each { changeSet ->
-                        changeSet.items.each { item ->
-                            item.paths.each { path -> // This is the correct property for Git ChangeSetItem
-                                changedPaths.add(path)
-                            }
-                        }
+                    // 🔍 Determine which environment (dev or prod) the commit affected
+                    def changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim().split('\n')
+                    def isDevCommit = changedFiles.any { it.startsWith('config/dev/') }
+                    def isProdCommit = changedFiles.any { it.startsWith('config/prod/') }
+
+                    if (isDevCommit && !isProdCommit) {
+                        env.CONFIG_FILE = "config/dev/initialization_config.json"
+                        echo "Detected changes in DEV config — using ${env.CONFIG_FILE}"
+                    } else if (isProdCommit && !isDevCommit) {
+                        env.CONFIG_FILE = "config/prod/initialization_config.json"
+                        echo "Detected changes in PROD config — using ${env.CONFIG_FILE}"
+                    } else if (isDevCommit && isProdCommit) {
+                        error "FATAL: Both dev and prod configs were modified in the same commit. Please commit separately."
+                    } else {
+                        echo "No environment-specific config changes detected. Defaulting to DEV."
+                        env.CONFIG_FILE = "config/dev/initialization_config.json"
                     }
-                    
-                    // Fallback logic for Git Plugin version compatibility:
-                    if (changedPaths.isEmpty() && !currentBuild.changeSets.isEmpty()) {
-                        currentBuild.changeSets.each { changeSet ->
-                             changeSet.items.each { item ->
-                                 // Access paths using Groovy's GPath for maximum compatibility
-                                 changedPaths.addAll(item.get('paths') ?: []) 
-                             }
-                        }
-                    }
-                    
-                    // Logic to find the first change that specifies an environment
-                    def detectedEnv = changedPaths.find { it.startsWith("${env.CONFIG_BASE_PATH}/") }?.tokenize('/')?.get(1)
 
-                    if (!detectedEnv) {
-                        error "FATAL: Could not determine target environment. Commit must include a change within '${env.CONFIG_BASE_PATH}/<env>/' (e.g., config/dev/)."
-                    }
-                    
-                    // Set the global environment variable for later stages
-                    env.TARGET_ENV = detectedEnv
-                    echo "--> Determined Target Environment: ${env.TARGET_ENV}"
-
-
-                    // --- STEP 2: Dynamically Construct and Load Config Paths ---
-                    def dynamicConfigPath = "${env.CONFIG_BASE_PATH}/${env.TARGET_ENV}/${env.CONFIG_FILE}"
-                    def dynamicPasswordsPath = "${env.CONFIG_BASE_PATH}/${env.TARGET_ENV}/${env.PASSWORDS_FILE}"
-
-                    // Load Configuration
-                    echo "Loading deployment configuration from ${dynamicConfigPath}..."
-                    if (fileExists(dynamicConfigPath)) { 
-                        config = readJSON file: dynamicConfigPath
+                    echo "Loading deployment configuration from ${env.CONFIG_FILE}..."
+                    if (fileExists(env.CONFIG_FILE)) { 
+                        config = readJSON file: env.CONFIG_FILE 
                     } else { 
-                        error "FATAL: Config file '${dynamicConfigPath}' not found for environment ${env.TARGET_ENV}!" 
+                        error "FATAL: Config file '${env.CONFIG_FILE}' not found!" 
                     }
 
-                    // Load Passwords
-                    echo "Loading passwords file from ${dynamicPasswordsPath}..."
-                    if (fileExists(dynamicPasswordsPath)) { 
-                        passwords = readJSON file: dynamicPasswordsPath
+                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
+                    if (fileExists(env.PASSWORDS_FILE)) { 
+                        passwords = readJSON file: env.PASSWORDS_FILE 
                     } else { 
-                        error "FATAL: Passwords file '${dynamicPasswordsPath}' not found for environment ${env.TARGET_ENV}!" 
+                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
                     }
                 }
             }
