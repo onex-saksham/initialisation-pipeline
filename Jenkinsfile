@@ -10,7 +10,7 @@ pipeline {
         SUDO_COMMANDS_DIR = "sudo_commands"
         JAVA_PYTHON_SCRIPT = "install_java_python.sh"
         // JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key'
-        VAULT_CREDENTIAL_ID = 'vault-approle-credential'
+        // VAULT_CREDENTIAL_ID = 'vault-approle-credential'
         PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
     }
 
@@ -154,7 +154,7 @@ pipeline {
                     [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
                         [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
                     ]]
-                ], credentialsId: env.VAULT_CREDENTIAL_ID) { // <-- This is the correct parameter name
+                ], vaultCredentialId: 'vault-approle-credential') {
                     script {
                         writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
                         def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
