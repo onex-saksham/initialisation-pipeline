@@ -1,39 +1,4 @@
 {
-    "deploy": {
-        "zookeeper": "__zk__",
-        "kafka": "__kf__",
-        "nifi": "__nf__",
-        "nifi_registry": "__nr__",
-        "doris_fe": "__fe__",
-        "doris_be": "__be__",
-        "connect_fe_be": "__co__",
-        "node_exporter": "__nx__",
-        "kafka_exporter": "__kx__",
-        "prometheus": "__pm__",
-        "grafana": "__gf__",
-        "health_reports": "__hr__",
-        "recon": "__rc__",
-        "jobs": "__jb__",
-        "api": "__ap__",
-        "nginx": "__ng__",
-        "schema_registry":"__sr__"
-
-    },
-    "releases": {
-        "new_version": "__new_version__",
-        "current_version": "__current_version__",
-        "tenant_id": [
-            "__tenant_id__"
-        ]
-    },
-    "base_user": "jenkins",
-    "user": "saksham123",
-    "deployment_type": "single",
-    "deployment_path": "__deployment_path__",
-    "ssh_port": "22",
-    "deploy_whatsapp": "__wa__",
-    "deploy_sms": "__sms__",
-    "deploy_rcs": "__rcs__",
     "zookeeper": {
         "node_ip": [
             "10.20.3.78"
@@ -246,5 +211,4 @@
         "retry_count": 3,
         "retry_interval": 300
     }
-
 }
