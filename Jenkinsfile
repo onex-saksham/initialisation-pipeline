@@ -52,6 +52,12 @@ pipeline {
                     } else {
                         echo "No config file found at ${configFilePath}"
                     }
+                    echo "Loading passwords file from ${env.PASSWORDS_FILE}..."
+                    if (fileExists(env.PASSWORDS_FILE)) { 
+                        passwords = readJSON file: env.PASSWORDS_FILE 
+                    } else { 
+                        error "FATAL: Passwords file '${env.PASSWORDS_FILE}' not found!" 
+                    }
 
                 }
             }
