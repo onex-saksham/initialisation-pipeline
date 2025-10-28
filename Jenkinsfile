@@ -1,14 +1,12 @@
-// Top-level variables, available throughout the script
 def config = [:]
 def passwords = [:]
 def nodesToProvision = [:]
 
-// Define environment variables as script variables
 def PASSWORDS_FILE = "passwords.json"
 def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-// def JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
 def VAULT_CREDENTIAL_ID = 'vault-approle-credential' 
 def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
+def JENKINS_KEY_FILE = "jenkins_key_from_vault.pem"
 
 // The entire pipeline runs on a node (agent)
 node {
@@ -89,6 +87,22 @@ node {
             echo "Preparation stage completed successfully."
         }
 
+        stage('Fetch SSH Key from Vault') {
+            echo "Fetching Jenkins SSH private key from Vault..."
+            def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
+            def secretsToFetch = [
+                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
+                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
+                ]]
+            ]
+
+            withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
+                writeFile(file: JENKINS_KEY_FILE, text: env.SSH_PRIVATE_KEY_CONTENT)
+                sh "chmod 600 ${JENKINS_KEY_FILE}"
+            }
+            echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
+        }
+
         stage('Identify Target Nodes') {
             echo "Parsing configuration to build deployment plan..."
             def excludedKeys = ['deployment_type', 'ssh_port']
@@ -127,24 +141,7 @@ node {
             }
         }
 
-        stage('Provision and Reboot Servers') {
-            def vaultConfig = [
-                        vaultCredentialId: VAULT_CREDENTIAL_ID
-                    ]
-
-                    // 2. Define the secrets to fetch
-                    def secretsToFetch = [
-                        [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                            [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                        ]]
-                    ]
-                    
-                    // 3. Call withVault with the correct structured map
-                    withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
-                        // This block will now execute correctly
-                        writeFile(file: JENKINS_KEY_FILE, text: env.SSH_PRIVATE_KEY_CONTENT)
-                        sh "chmod 600 ${JENKINS_KEY_FILE}"
-                    }
+        stage('Provision and Reboot Servers') {            
                 sh """
                     command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
                     command -v nc >/dev/null 2>&1 || {
@@ -241,15 +238,7 @@ node {
         }
 
         stage('Configure Components') {
-            withVault(vaultSecrets: [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
-                {
-                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
-                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
-                sh "chmod 600 ${JENKINS_KEY_FILE}"
+            
                 // Outer loop: Iterate through each server ONCE.
                 nodesToProvision.each { ip, componentList ->
                     echo "--- Configuring ALL Components on ${ip} ---"
@@ -341,20 +330,12 @@ node {
                         sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
                     }
                     echo "--- Finished All Component Configurations on ${ip} ---"
-                }
+                
             }
         }
 
         stage('Install Dependencies') {
-            withVault(vaultSecrets: [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
-                {
-                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
-                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
-                sh "chmod 600 ${JENKINS_KEY_FILE}"
+            
                 // This loop runs ONCE per unique IP, which is correct.
                 nodesToProvision.each { ip, componentList ->
                     echo "--- Installing Common Dependencies on ${ip} ---"
@@ -410,19 +391,11 @@ node {
                         echo "Skipping dependency installation for ${ip} as no versions were specified by any component."
                     }
                 }
-            }
+            
         }
 
         stage('Configure Inter-Service SSH') {
-            withVault(vaultSecrets: [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
-                {
-                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
-                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
-                sh "chmod 600 ${JENKINS_KEY_FILE}"
+            
                 // Check if this is a multi-node deployment. If not, skip this stage.
                 if (nodesToProvision.size() <= 1) {
                     echo "Skipping inter-service SSH configuration for single-node deployment."
@@ -442,7 +415,7 @@ node {
                         if (details.component == 'backend_job') {
                             backendIps.add(ip)
                         }
-                    }
+                    
                 }
                 
                 apiIps = apiIps.unique()
