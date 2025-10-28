@@ -6,8 +6,8 @@ def nodesToProvision = [:]
 // Define environment variables as script variables
 def PASSWORDS_FILE = "passwords.json"
 def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-def JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' // Define credential ID here
-def VAULT_CREDENTIAL_ID = 'vault-approle-credential' // Define credential ID here
+// def JENKINS_SSH_CREDENTIALS_ID = 'server-ssh-key' 
+def VAULT_CREDENTIAL_ID = 'vault-approle-credential' 
 def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
 
 // The entire pipeline runs on a node (agent)
@@ -234,15 +234,24 @@ node {
         }
 
         stage('Configure Components') {
-            withVault(vaultSecrets: [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ], vaultCredentialId: VAULT_CREDENTIAL_ID) 
+            def vaultConfig = [
+                    vaultCredentialId: VAULT_CREDENTIAL_ID
+                ]
+
+                // 2. Define the list of secrets to fetch
+                def secretsToFetch = [
+                    [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
+                        [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
+                    ]]
+                ]
+
+                // 3. Call withVault with the correct structure
+                withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
+                    writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
+                    def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
+                    sh "chmod 600 ${JENKINS_KEY_FILE}"
+                }
                 {
-                writeFile(file: 'jenkins_key_from_vault.pem', text: env.SSH_PRIVATE_KEY_CONTENT)
-                def JENKINS_KEY_FILE = 'jenkins_key_from_vault.pem'
-                sh "chmod 600 ${JENKINS_KEY_FILE}"
                 // Outer loop: Iterate through each server ONCE.
                 nodesToProvision.each { ip, componentList ->
                     echo "--- Configuring ALL Components on ${ip} ---"
