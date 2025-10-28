@@ -20,51 +20,42 @@ pipeline {
                     echo "Checking out source code from SCM..."
                     checkout scm
 
-                    // get list of changed files safely
-                    def changedFilesRaw = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim()
-                    if (!changedFilesRaw) {
-                        error "❌ No changed files found between commits — cannot determine config automatically."
+                    // Detect changed files between commits
+                    def changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD", returnStdout: true).trim().split('\n')
+                    echo "Changed files: ${changedFiles}"
+
+                    // Find all subdirectories under 'config/'
+                    def configDirs = sh(script: "ls -d config/*/ 2>/dev/null || true", returnStdout: true).trim().split('\n')
+                    configDirs = configDirs.collect { it.replaceAll('config/', '').replaceAll('/', '') }.findAll { it } // Clean names
+
+                    echo "Detected environment directories: ${configDirs}"
+
+                    // Try to detect which env was modified
+                    def envDir = configDirs.find { env ->
+                        changedFiles.any { it.startsWith("config/${env}/") }
                     }
 
-                    def changedFiles = changedFilesRaw.split('\n')
-                    def envMap = [
-                        "dev"   : "config/dev/initialization_config.json",
-                        "prod"  : "config/prod/initialization_config.json",
-                        "single": "config/single/initialization_config.json"
-                    ]
-
-                    def matchedEnvs = envMap.findAll { key, path ->
-                        changedFiles.any { it.startsWith("config/${key}/") }
-                    }.collect { it.key }
-
-                    if (matchedEnvs.size() == 1) {
-                        def selected = matchedEnvs[0]
-                        env.CONFIG_FILE = envMap[selected]
-                        echo "✅ Detected environment: ${selected.toUpperCase()} (${env.CONFIG_FILE})"
-                    } else if (matchedEnvs.size() > 1) {
-                        error "❌ Multiple environments modified in one commit: ${matchedEnvs}. Commit separately."
-                    } else {
-                        error "❌ No environment-specific config directory modified (expected one of: dev, prod, single)."
+                    if (!envDir) {
+                        echo "⚠️ No environment-specific config directory modified. Defaulting to DEV."
+                        envDir = 'dev'
                     }
 
-                    // read config JSON
-                    echo "Loading configuration from ${env.CONFIG_FILE}..."
-                    if (fileExists(env.CONFIG_FILE)) {
-                        config = readJSON file: env.CONFIG_FILE
-                    } else {
-                        error "❌ Config file '${env.CONFIG_FILE}' not found in repo!"
-                    }
+                    echo "✅ Using environment: ${envDir.toUpperCase()}"
+                    env.ENVIRONMENT = envDir
 
-                    // read passwords JSON
-                    echo "Loading passwords from ${env.PASSWORDS_FILE}..."
-                    if (fileExists(env.PASSWORDS_FILE)) {
-                        passwords = readJSON file: env.PASSWORDS_FILE
+                    // Optionally load its config
+                    def configFilePath = "config/${envDir}/initialization_config.json"
+                    if (fileExists(configFilePath)) {
+                        def config = readJSON file: configFilePath
+                        echo "Loaded configuration from ${configFilePath}"
+                        env.CONFIG = config
                     } else {
-                        error "❌ Passwords file '${env.PASSWORDS_FILE}' not found!"
+                        echo "⚠️ No config file found at ${configFilePath}"
                     }
                 }
             }
         }
+
 
         stage('Identify Target Nodes') {
             steps {
