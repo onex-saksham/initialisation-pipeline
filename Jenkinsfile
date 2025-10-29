@@ -103,12 +103,11 @@ node {
             echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
         }
 
-        stage('Identify Target Nodes') {
+
+        stage('Identify Target Nodes and Dependencies') {
             echo "Parsing configuration to build deployment plan..."
             def excludedKeys = ['deployment_type', 'ssh_port']
 
-            // This logic correctly handles both 'single' and 'multi' deployment types
-            // by grouping all components by their assigned IP address.
             config.each { componentName, componentData ->
                 if (!(componentName in excludedKeys) && (componentData instanceof Map)) {
                     def ips = []
@@ -120,11 +119,9 @@ node {
                     }
                     ips.unique().each { ip ->
                         if (ip && ip instanceof String && !ip.startsWith('_')) {
-                            // If this is the first time we've seen this IP, initialize its list of components
                             if (!nodesToProvision.containsKey(ip)) {
                                 nodesToProvision[ip] = []
                             }
-                            // Add the current component to this IP's list
                             nodesToProvision[ip].add([component: componentName, data: componentData])
                         }
                     }
@@ -138,6 +135,33 @@ node {
                 nodesToProvision.each { ip, componentList ->
                     echo " -> Node ${ip} will host: ${componentList.collect { it.component }.join(', ')}"
                 }
+            }
+
+            echo "\nBuilding dependency installation plan..."
+            // We'll rename this to dependencyPlan for clarity in the next stage
+            dependencyPlan = [:] 
+            nodesToProvision.each { ip, componentList ->
+                def javaVersions = new HashSet<String>()
+                def pythonVersions = new HashSet<String>()
+
+                componentList.each { componentDetails ->
+                    if (componentDetails.data.java_version) {
+                        javaVersions.add(componentDetails.data.java_version)
+                    }
+                    if (componentDetails.data.python_version) {
+                        pythonVersions.add(componentDetails.data.python_version)
+                    }
+                }
+                
+                // Only add an entry if there are dependencies to install
+                if (!javaVersions.isEmpty() || !pythonVersions.isEmpty()) {
+                    dependencyPlan[ip] = [java: javaVersions.toList(), python: pythonVersions.toList()]
+                }
+            }
+
+            echo "Dependency plan created:"
+            dependencyPlan.each { ip, versions ->
+                echo " -> Node ${ip} requires Java: ${versions.java}, Python: ${versions.python}"
             }
         }
 
@@ -335,76 +359,55 @@ node {
         }
 
         stage('Install Dependencies') {
-            
-                // This loop runs ONCE per unique IP, which is correct.
-                nodesToProvision.each { ip, componentList ->
-                    echo "--- Installing Common Dependencies on ${ip} ---"
-                    // Find the FIRST component on this IP that specifies versions to avoid redundant installs.
-                    def primaryComponent = componentList.find { it.data.java_version && it.data.python_version }
-                    
-                    if (primaryComponent) {
-                        def javaVersion = primaryComponent.data.java_version
-                        def pythonVersion = primaryComponent.data.python_version
-                        def deployUser = passwords[ip].deploy_user
-                        def sshPort = config.ssh_port ?: 22
-                        def deployHost = "${deployUser}@${ip}"
+            dependencyPlan.each { ip, versions ->
+                echo "--- Installing Dependencies on ${ip} ---"
+                
+                def requiredJava = versions.java
+                def requiredPython = versions.python
 
-                        echo "Required versions (sourced from component '${primaryComponent.component}') - Java: ${javaVersion}, Python: ${pythonVersion}"
-                        
-                        // This block will retry up to 3 times if the server isn't fully ready after reboot.
-                        retry(3) {
-                            // Add a delay before each attempt to give the server's SSH service time to initialize.
-                            sleep 10
-                            echo "Attempting to connect to ${ip} to install dependencies..."
-                            def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
-                            def remoteLogPath = "/tmp/install_dependencies.log"
+                def deployUser = passwords[ip].deploy_user
+                def sshPort = config.ssh_port ?: 22
+                def deployHost = "${deployUser}@${ip}"
 
-                            // Step 1: Copy the installation script to the remote server
-                            echo "Step 1: Copying '${JAVA_PYTHON_SCRIPT}' to ${ip}"
-                            sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+                retry(3) {
+                    sleep(10)
+                    echo "Attempting to connect to ${ip}..."
+                    def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
+                    def remoteLogPath = "/tmp/install_dependencies.log"
 
-                            // Step 2: Execute the script, redirecting verbose output to a log file
-                            echo "Step 2: Executing installation script on ${ip}. See archived artifacts for full log."
-                            def remoteCommand = """
-                                set -e
-                                chmod +x ${remoteScriptPath}
-                                sudo ${remoteScriptPath} ${pythonVersion} ${javaVersion} > ${remoteLogPath} 2>&1
-                                echo "\\n--- Displaying last 30 lines of installation log ---"
-                                tail -n 30 ${remoteLogPath}
-                                echo "--- End of installation log tail ---"
-                            """
-                            sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
-                            
-                            // Step 3: Copy the full log file back to Jenkins for archiving
-                            def localLogFile = "install_log_${ip}.log"
-                            echo "Step 3: Archiving full installation log to '${localLogFile}'"
-                            sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
-                            archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
+                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
 
-                            // Step 4: Clean up temporary files on the remote server
-                            echo "Step 4: Cleaning up temporary files on ${ip}"
-                            sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
-                        }
-                        
-                        echo "Successfully installed dependencies on ${ip}"
-                    } else {
-                        echo "Skipping dependency installation for ${ip} as no versions were specified by any component."
-                    }
+                    def pythonVersionsString = requiredPython.join(' ')
+                    def javaVersionsString = requiredJava.join(' ')
+
+                    def remoteCommand = """
+                        set -e
+                        chmod +x ${remoteScriptPath}
+                        # IMPORTANT: Your install_java_python.sh script MUST handle these arguments
+                        sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
+                        echo "\\n--- Displaying last 30 lines of installation log ---"
+                        tail -n 30 ${remoteLogPath}
+                        echo "--- End of installation log tail ---"
+                    """
+                    sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+
+                    def localLogFile = "install_log_${ip}.log"
+                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
+                    archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
+
+                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
                 }
-            
+                echo "Successfully installed dependencies on ${ip}"
+            }
         }
 
         stage('Configure Inter-Service SSH') {
-            
-                // Check if this is a multi-node deployment. If not, skip this stage.
                 if (nodesToProvision.size() <= 1) {
                     echo "Skipping inter-service SSH configuration for single-node deployment."
                     return
                 }
 
                 echo "--- Starting Inter-Service SSH Configuration ---"
-
-                // Find all IP addresses for 'api' and 'backend_job' components
                 def apiIps = []
                 def backendIps = []
                 nodesToProvision.each { ip, componentList ->
