@@ -5,7 +5,7 @@ def nodesToProvision = [:]
 def PASSWORDS_FILE = "passwords.json"
 def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
 def VAULT_CREDENTIAL_ID = 'vault-approle-credential' 
-def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/id_rsa.pub'
+def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/jenkins_new_key.pub'
 def JENKINS_KEY_FILE = "jenkins_key_from_vault.pem"
 
 // The entire pipeline runs on a node (agent)
