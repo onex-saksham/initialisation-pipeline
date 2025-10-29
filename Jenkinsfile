@@ -76,15 +76,37 @@ node {
             echo "Loaded configuration from ${configFilePath}"
             env.CONFIG = config // Keep using env var for config for compatibility with later stages if needed
 
-            // Load passwords file (if provided)
-            echo "Loading passwords file from ${PASSWORDS_FILE}..."
-            if (fileExists(PASSWORDS_FILE)) {
-                passwords = readJSON file: PASSWORDS_FILE
-            } else {
-                error "Passwords file '${PASSWORDS_FILE}' not found!"
-            }
 
-            echo "Preparation stage completed successfully."
+
+            //password.json
+            echo "Fetching passwords from Vault to create local ${PASSWORDS_FILE}..."
+            // Construct the path based on the detected environment (e.g., 'single')
+            // Assumes a KV v2 engine mounted at 'secret/'
+            def vaultPasswordPath = "secret/data/initialization/nodes/${envDir}/passwords.json"
+            def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
+
+            withVault(configuration: vaultConfig) {
+                // Use the vault CLI to get the secret. First, check if it exists.
+                def checkSecretCommand = "vault kv get -format=json ${vaultPasswordPath}"
+                def exitCode = sh(script: "${checkSecretCommand} > /dev/null 2>&1", returnStatus: true)
+
+                if (exitCode == 0) {
+                    echo "Passwords secret found in Vault at path: ${vaultPasswordPath}"
+                    // Read the secret's JSON output
+                    def secretJsonOutput = sh(script: checkSecretCommand, returnStdout: true).trim()
+                    // The actual data is nested under data.data for KV v2 secrets
+                    def passwordData = readJSON(text: secretJsonOutput).data.data
+
+                    // Write this data to a local passwords.json file
+                    writeJSON(file: PASSWORDS_FILE, json: passwordData, pretty: 4)
+                    echo "Successfully created local ${PASSWORDS_FILE} from Vault secret."
+
+                    // Now load the passwords variable from the file we just created
+                    passwords = readJSON(file: PASSWORDS_FILE)
+                } else {
+                    error("FATAL: Passwords secret not found in Vault at path: ${vaultPasswordPath}. The Vault AppRole may lack permissions.")
+                }
+            }
         }
 
         stage('Fetch SSH Key from Vault') {
