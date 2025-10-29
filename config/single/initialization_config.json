@@ -16,7 +16,6 @@
         "java_version": "17",
         "python_version": "3.12.0"
     },
-    
     "kraft_controller": {
         "properties": {
             "storage": "/data/kraft-controller-storage",            

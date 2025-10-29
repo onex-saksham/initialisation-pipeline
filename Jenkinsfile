@@ -76,30 +76,34 @@ node {
             echo "Loaded configuration from ${configFilePath}"
             env.CONFIG = config // Keep using env var for config for compatibility with later stages if needed
 
+            // Load passwords file (if provided)
+            // echo "Loading passwords file from ${PASSWORDS_FILE}..."
+            // if (fileExists(PASSWORDS_FILE)) {
+            //     passwords = readJSON file: PASSWORDS_FILE
+            // } else {
+            //     error "Passwords file '${PASSWORDS_FILE}' not found!"
+            // }
 
+            // echo "Preparation stage completed successfully."
+        }
+        stage('Fetch Passwords from Vault') {
+            echo "🔐 Fetching passwords.json from Vault..."
 
-            //password.json
-            echo "Fetching passwords from Vault to create local ${PASSWORDS_FILE}..."
-            def vaultPasswordPath = "secret/data/initialization/nodes/${envDir}/passwords.json"
             def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
+            def vaultPath = "secret/initialization/nodes/${env.ENVIRONMENT}/passwords.json"
 
-            withVault([configuration: vaultConfig, vaultSecrets: []]) {
-                def checkSecretCommand = "vault kv get -format=json ${vaultPasswordPath}"
-                def exitCode = sh(script: "${checkSecretCommand} > /dev/null 2>&1", returnStatus: true)
-
-                if (exitCode == 0) {
-                    echo "Passwords secret found in Vault at path: ${vaultPasswordPath}"
-                    def secretJsonOutput = sh(script: checkSecretCommand, returnStdout: true).trim()
-                    def passwordData = readJSON(text: secretJsonOutput).data.data
-
-                    writeJSON(file: PASSWORDS_FILE, json: passwordData, pretty: 4)
-                    echo "Successfully created local ${PASSWORDS_FILE} from Vault secret."
-                    
-                    passwords = readJSON(file: PASSWORDS_FILE)
-                } else {
-                    error("FATAL: Passwords secret not found in Vault at path: ${vaultPasswordPath}. The Vault AppRole may lack permissions.")
-                }
+            def vaultResponse = ""
+            withVault([configuration: vaultConfig, vaultSecrets: [[path: vaultPath, engineVersion: 2, secretValues: [[envVar: 'PASSWORDS_JSON_CONTENT', vaultKey: 'data']]]]]) {
+                vaultResponse = env.PASSWORDS_JSON_CONTENT
             }
+
+            if (!vaultResponse?.trim()) {
+                error "FATAL: passwords.json could not be fetched from Vault at path: ${vaultPath}"
+            }
+
+            // Write the fetched content to local passwords.json for compatibility
+            writeFile(file: PASSWORDS_FILE, text: vaultResponse)
+            echo "passwords.json successfully fetched from Vault and stored locally."
         }
 
         stage('Fetch SSH Key from Vault') {
