@@ -87,6 +87,12 @@ node {
             // echo "Preparation stage completed successfully."
         }
         stage('Fetch Passwords from Vault') {
+            // 🔧 Load passwords.json before provisioning
+            if (!fileExists(PASSWORDS_FILE)) {
+                error "Passwords file '${PASSWORDS_FILE}' not found!"
+            }
+            passwords = readJSON file: PASSWORDS_FILE
+
             echo "Fetching passwords.json from Vault using root token..."
 
             // Use root token credential instead of AppRole
