@@ -414,7 +414,7 @@ node {
         stage('Configure Inter-Service SSH') {
             if (nodesToProvision.size() <= 1) {
                 echo "Skipping inter-service SSH configuration for single-node deployment."
-                return // Exits the stage cleanly
+                return 
             }
 
             echo "--- Starting Inter-Service SSH Configuration ---"
@@ -496,7 +496,7 @@ node {
             echo "Pipeline completed successfully!"
         }
         
-        echo "Pipeline run finished. Cleaning up workspace..."
-        cleanWs()
+        // echo "Pipeline run finished. Cleaning up workspace..."
+        // cleanWs()
     }
 }
