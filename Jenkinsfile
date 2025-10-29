@@ -73,13 +73,15 @@ node {
             echo "Loaded configuration from ${configFilePath}"
             env.CONFIG = config 
         }
-        stage('Fetch Passwords from Vault') {            
+        stage('Fetch Passwords from Vault') {
+            def PASSWORDS_FILE = "passwords.json"
+
             echo "Fetching passwords.json from Vault using root token..."
 
             // Use root token credential instead of AppRole
             withCredentials([string(credentialsId: 'vault-root-token', variable: 'VAULT_ROOT_TOKEN')]) {
                 def vaultPath = "secret/data/initialization/nodes/${env.ENVIRONMENT}/passwords.json"
-                def vaultAddr = "http://localhost:8200" 
+                def vaultAddr = "http://localhost:8200"
 
                 // Fetch secret data via Vault HTTP API
                 def vaultResponse = sh(
@@ -112,15 +114,12 @@ node {
                 writeFile file: PASSWORDS_FILE,
                         text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(passwordsData))
                 echo "passwords.json written locally at ${PASSWORDS_FILE}"
-                def PASSWORDS_FILE = "passwords.json"
-                // 🔧 Load passwords.json before provisioning
-                if (!fileExists(PASSWORDS_FILE)) {
-                    error "Passwords file '${PASSWORDS_FILE}' not found!"
-                }
-                passwords = readJSON file: PASSWORDS_FILE
-
             }
+
+            // Now read it into the pipeline memory
+            passwords = readJSON file: PASSWORDS_FILE
         }
+
 
 
 
