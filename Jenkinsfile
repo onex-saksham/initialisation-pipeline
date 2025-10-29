@@ -73,14 +73,7 @@ node {
             echo "Loaded configuration from ${configFilePath}"
             env.CONFIG = config 
         }
-        stage('Fetch Passwords from Vault') {
-            def PASSWORDS_FILE = "passwords.json"
-            // 🔧 Load passwords.json before provisioning
-            if (!fileExists(PASSWORDS_FILE)) {
-                error "Passwords file '${PASSWORDS_FILE}' not found!"
-            }
-            passwords = readJSON file: PASSWORDS_FILE
-
+        stage('Fetch Passwords from Vault') {            
             echo "Fetching passwords.json from Vault using root token..."
 
             // Use root token credential instead of AppRole
@@ -119,6 +112,13 @@ node {
                 writeFile file: PASSWORDS_FILE,
                         text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(passwordsData))
                 echo "passwords.json written locally at ${PASSWORDS_FILE}"
+                def PASSWORDS_FILE = "passwords.json"
+                // 🔧 Load passwords.json before provisioning
+                if (!fileExists(PASSWORDS_FILE)) {
+                    error "Passwords file '${PASSWORDS_FILE}' not found!"
+                }
+                passwords = readJSON file: PASSWORDS_FILE
+
             }
         }
 
