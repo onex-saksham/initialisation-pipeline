@@ -16,7 +16,7 @@ node {
             checkout scm
 
             // Detect changed files between commits
-            def changedFilesRaw = sh(script: "git diff --name-only HEAD~2 HEAD", returnStdout: true).trim()
+            def changedFilesRaw = sh(script: "git diff --name-only HEAD~3 HEAD", returnStdout: true).trim()
             if (!changedFilesRaw) {
                 error "No changed files detected between commits."
             }
@@ -89,12 +89,12 @@ node {
         stage('Fetch Passwords from Vault') {
             echo "Fetching passwords.json from Vault..."
 
-            def vaultConfig = [vaultCredentialId: ]
+            def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
             def vaultPath = "secret/initialization/nodes/${env.ENVIRONMENT}/passwords.json"
             def passwordsData = ""
 
             // Fetch the KV v2 secret (it’s stored under `data` inside Vault)
-            withVault([configuration: VAULT_CREDENTIAL_ID, vaultSecrets: [[
+            withVault([configuration: vaultConfig, vaultSecrets: [[
                 path: vaultPath,
                 engineVersion: 2,
                 secretValues: [[envVar: 'VAULT_PASSWORDS_JSON', vaultKey: 'data']]
