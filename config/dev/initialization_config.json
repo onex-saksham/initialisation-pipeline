@@ -27,7 +27,7 @@
         ]
     },
     "base_user": "jenkins",
-    "user": "saksham123",
+    "user": "saksham12",
     "deployment_type": "single",
     "deployment_path": "__deployment_path__",
     "ssh_port": "22",
