@@ -16,7 +16,7 @@ node {
             checkout scm
 
             // Detect changed files between commits
-            def changedFilesRaw = sh(script: "git diff --name-only HEAD~3 HEAD", returnStdout: true).trim()
+            def changedFilesRaw = sh(script: "git diff --name-only HEAD~1 HEAD", returnStdout: true).trim()
             if (!changedFilesRaw) {
                 error "No changed files detected between commits."
             }
