@@ -87,24 +87,46 @@ node {
             // echo "Preparation stage completed successfully."
         }
         stage('Fetch Passwords from Vault') {
-            echo "🔐 Fetching passwords.json from Vault..."
+            echo "Fetching passwords.json from Vault..."
 
             def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
             def vaultPath = "secret/initialization/nodes/${env.ENVIRONMENT}/passwords.json"
+            def passwordsData = ""
 
-            def vaultResponse = ""
-            withVault([configuration: vaultConfig, vaultSecrets: [[path: vaultPath, engineVersion: 2, secretValues: [[envVar: 'PASSWORDS_JSON_CONTENT', vaultKey: 'data']]]]]) {
-                vaultResponse = env.PASSWORDS_JSON_CONTENT
+            // Fetch the KV v2 secret (it’s stored under `data` inside Vault)
+            withVault([configuration: vaultConfig, vaultSecrets: [[
+                path: vaultPath,
+                engineVersion: 2,
+                secretValues: [[envVar: 'VAULT_PASSWORDS_JSON', vaultKey: 'data']]
+            ]]]) {
+                passwordsData = env.VAULT_PASSWORDS_JSON
             }
 
-            if (!vaultResponse?.trim()) {
-                error "FATAL: passwords.json could not be fetched from Vault at path: ${vaultPath}"
+            if (!passwordsData?.trim()) {
+                error "Failed to fetch passwords from Vault path: ${vaultPath}"
             }
 
-            // Write the fetched content to local passwords.json for compatibility
-            writeFile(file: PASSWORDS_FILE, text: vaultResponse)
-            echo "passwords.json successfully fetched from Vault and stored locally."
+            echo "Successfully pulled secret from Vault. Writing to ${PASSWORDS_FILE}..."
+
+            // Convert Groovy map string to proper JSON and save locally
+            def jsonData
+            try {
+                jsonData = readJSON text: passwordsData
+            } catch (ignored) {
+                // If Vault returned map-style text like "map[key:value]", convert it safely
+                passwordsData = passwordsData
+                    .replaceAll('map\\[', '{')
+                    .replaceAll('\\]', '}')
+                    .replaceAll(' ([A-Za-z0-9_]+):', '"$1":')
+                    .replaceAll(':([A-Za-z0-9_]+)', ':"$1"')
+                jsonData = readJSON text: passwordsData
+            }
+
+            // Write formatted JSON to local file for compatibility with existing logic
+            writeFile file: PASSWORDS_FILE, text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(jsonData))
+            echo "passwords.json written locally."
         }
+
 
         stage('Fetch SSH Key from Vault') {
             echo "Fetching Jenkins SSH private key from Vault..."
