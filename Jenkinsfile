@@ -2,10 +2,7 @@ def config = [:]
 def passwords = [:]
 def nodesToProvision = [:]
 
-def PASSWORDS_FILE = "passwords.json"
-def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-def VAULT_CREDENTIAL_ID = 'vault-approle-credential' 
-def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/jenkins_new_key.pub'
+def VAULT_CREDENTIAL_ID = 'vault-approle-credential' // Need to remove this shift this to token
 def JENKINS_KEY_FILE = "jenkins_key_from_vault.pem"
 
 // The entire pipeline runs on a node (agent)
@@ -56,7 +53,7 @@ node {
             env.ENVIRONMENT = envDir
 
             // Load configuration file
-            def configFilePath = "config/${envDir}/initialization_config.json"
+            def configFilePath = "config/${envDir}/initialisation_config.json"
             if (!fileExists(configFilePath)) {
                 error "Config file not found at ${configFilePath}"
             }
@@ -74,19 +71,10 @@ node {
             }
 
             echo "Loaded configuration from ${configFilePath}"
-            env.CONFIG = config // Keep using env var for config for compatibility with later stages if needed
-
-            // Load passwords file (if provided)
-            // echo "Loading passwords file from ${PASSWORDS_FILE}..."
-            // if (fileExists(PASSWORDS_FILE)) {
-            //     passwords = readJSON file: PASSWORDS_FILE
-            // } else {
-            //     error "Passwords file '${PASSWORDS_FILE}' not found!"
-            // }
-
-            // echo "Preparation stage completed successfully."
+            env.CONFIG = config 
         }
         stage('Fetch Passwords from Vault') {
+            def PASSWORDS_FILE = "passwords.json"
             // 🔧 Load passwords.json before provisioning
             if (!fileExists(PASSWORDS_FILE)) {
                 error "Passwords file '${PASSWORDS_FILE}' not found!"
@@ -268,6 +256,8 @@ node {
                         sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + initialPass + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
                     }
 
+                    def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/jenkins_new_key.pub'
+
                     // Step 2: Distribute the agent's public SSH key (runs once per server)
                     echo "Step 2: Distributing local SSH public key to new user on ${ip}"
                     if (!fileExists(PUBLIC_KEY_PATH)) {
@@ -290,23 +280,23 @@ node {
                     sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                     
                     // Step 4: Trigger a reboot to apply all core changes
-                    // echo "Step 4: Triggering reboot on ${ip}"
-                    // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+                    echo "Step 4: Triggering reboot on ${ip}"
+                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
-                    // // Step 5: Wait for the server to come back online
-                    // echo "Step 5: Waiting for ${ip} to come back online..."
-                    // timeout(time: 5, unit: 'MINUTES') {
-                    //     waitUntil {
-                    //         try {
-                    //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
-                    //             return status == 0
-                    //         } catch (Exception e) { return false }
-                    //     }
-                    // }
-                    // echo "Server ${ip} is back online."
-                    // sleep 10
+                    // Step 5: Wait for the server to come back online
+                    echo "Step 5: Waiting for ${ip} to come back online..."
+                    timeout(time: 5, unit: 'MINUTES') {
+                        waitUntil {
+                            try {
+                                def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+                                return status == 0
+                            } catch (Exception e) { return false }
+                        }
+                    }
+                    echo "Server ${ip} is back online."
+                    sleep 10
                     
-                    // echo "--- Finished Provisioning and Reboot on ${ip} ---"
+                    echo "--- Finished Provisioning and Reboot on ${ip} ---"
                 
             }
         }
@@ -381,6 +371,7 @@ node {
             dependencyPlan.each { ip, versions ->
                 echo "--- Installing Dependencies on ${ip} ---"
                 
+                def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
                 def requiredJava = versions.java
                 def requiredPython = versions.python
 
@@ -505,7 +496,7 @@ node {
             echo "Pipeline completed successfully!"
         }
         
-        // echo "Pipeline run finished. Cleaning up workspace..."
-        // cleanWs()
+        echo "Pipeline run finished. Cleaning up workspace..."
+        cleanWs()
     }
 }
