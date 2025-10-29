@@ -19,9 +19,9 @@ sudo apt-get install -y wget curl software-properties-common
 # This variable will hold the path of the last Java version installed, to set it as the default JAVA_HOME
 LATEST_JAVA_HOME_PATH=""
 
-######################################
-#      Install Python Versions       #
-######################################
+# ==================================
+#      Install Python Versions
+# ==================================
 if [ -n "$PYTHON_VERSIONS_STRING" ]; then
     # Track the last version to set it as default later
     LAST_PYTHON_XY_VERSION=""
@@ -31,7 +31,8 @@ if [ -n "$PYTHON_VERSIONS_STRING" ]; then
 
         # **CHECK 1: Check if the version is already installed before trying to install it.**
         if command -v "python${PYTHON_XY_VERSION}" &> /dev/null; then
-            echo "--> Python ${PYTHON_XY_VERSION} is already installed. Skipping installation."
+            # *** ADDED LOG FOR SKIPPING ***
+            echo "Skipping Python ${PYTHON_XY_VERSION} (already installed)."
         else
             echo "--> Installing Python ${PYTHON_XY_VERSION} from APT..."
             # The deadsnakes PPA provides a wider range of Python versions for Ubuntu
@@ -51,16 +52,17 @@ if [ -n "$PYTHON_VERSIONS_STRING" ]; then
     fi
 fi
 
-######################################
-#         Install Java Versions        #
-######################################
+# ==================================
+#         Install Java Versions
+# ==================================
 if [ -n "$JAVA_VERSIONS_STRING" ]; then
     for JAVA_VERSION in $JAVA_VERSIONS_STRING; do
         echo ">>> Processing Java (OpenJDK) ${JAVA_VERSION}..."
         
         # **CHECK 2: Use dpkg to check if the JDK package is already installed.**
         if dpkg -s "openjdk-${JAVA_VERSION}-jdk" &> /dev/null; then
-            echo "--> OpenJDK ${JAVA_VERSION} is already installed. Skipping installation."
+            # *** ADDED LOG FOR SKIPPING ***
+            echo "Skipping OpenJDK ${JAVA_VERSION} (already installed)."
         else
             echo "--> Installing OpenJDK ${JAVA_VERSION} from APT..."
             sudo apt-get install -y "openjdk-${JAVA_VERSION}-jdk"
@@ -72,9 +74,9 @@ if [ -n "$JAVA_VERSIONS_STRING" ]; then
     done
 fi
 
-######################################
-#  Update System & User Environments #
-######################################
+# ==================================
+#  Update System & User Environments
+# ==================================
 if [ -n "$LATEST_JAVA_HOME_PATH" ] && [ -d "$LATEST_JAVA_HOME_PATH" ]; then
     echo ">>> Setting system-wide JAVA_HOME to the last installed version: ${LATEST_JAVA_HOME_PATH}"
     sudo tee /etc/profile.d/jdk_custom.sh > /dev/null << EOF
@@ -84,9 +86,9 @@ EOF
     sudo chmod +x /etc/profile.d/jdk_custom.sh
 fi
 
-######################################
-#           Final Verification       #
-######################################
+# ==================================
+#           Final Verification
+# ==================================
 echo ">>> Verifying all requested versions are installed..."
 all_ok=true
 
@@ -95,10 +97,10 @@ if [ -n "$PYTHON_VERSIONS_STRING" ]; then
     for FULL_PYTHON_VERSION in $PYTHON_VERSIONS_STRING; do
         PYTHON_XY_VERSION=$(echo "$FULL_PYTHON_VERSION" | cut -d. -f1,2)
         if ! command -v "python${PYTHON_XY_VERSION}" &> /dev/null; then
-            echo " VERIFICATION FAILED: Python ${PYTHON_XY_VERSION} is not installed."
+            echo "VERIFICATION FAILED: Python ${PYTHON_XY_VERSION} is not installed."
             all_ok=false
         else
-            echo " Verified: Python ${PYTHON_XY_VERSION} is installed."
+            echo "Verified: Python ${PYTHON_XY_VERSION} is installed."
         fi
     done
 fi
@@ -107,7 +109,7 @@ fi
 if [ -n "$JAVA_VERSIONS_STRING" ]; then
     for JAVA_VERSION in $JAVA_VERSIONS_STRING; do
         if ! dpkg -s "openjdk-${JAVA_VERSION}-jdk" &> /dev/null; then
-            echo " VERIFICATION FAILED: OpenJDK ${JAVA_VERSION} is not installed."
+            echo "VERIFICATION FAILED: OpenJDK ${JAVA_VERSION} is not installed."
             all_ok=false
         else
             echo "Verified: OpenJDK ${JAVA_VERSION} is installed."
