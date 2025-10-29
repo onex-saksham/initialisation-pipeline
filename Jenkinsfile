@@ -87,45 +87,48 @@ node {
             // echo "Preparation stage completed successfully."
         }
         stage('Fetch Passwords from Vault') {
-            echo "Fetching passwords.json from Vault..."
+            echo "Fetching passwords.json from Vault using root token..."
 
-            def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
-            def vaultPath = "secret/initialization/nodes/${env.ENVIRONMENT}/passwords.json"
-            def passwordsData = ""
+            // Use root token credential instead of AppRole
+            withCredentials([string(credentialsId: 'vault-root-token', variable: 'VAULT_ROOT_TOKEN')]) {
+                def vaultPath = "secret/data/initialization/nodes/${env.ENVIRONMENT}/passwords.json"
+                def vaultAddr = "http://localhost:8200" 
 
-            // Fetch the KV v2 secret (it’s stored under `data` inside Vault)
-            withVault([configuration: vaultConfig, vaultSecrets: [[
-                path: vaultPath,
-                engineVersion: 2,
-                secretValues: [[envVar: 'VAULT_PASSWORDS_JSON', vaultKey: 'data']]
-            ]]]) {
-                passwordsData = env.VAULT_PASSWORDS_JSON
+                // Fetch secret data via Vault HTTP API
+                def vaultResponse = sh(
+                    script: """
+                        curl -s -H "X-Vault-Token: ${VAULT_ROOT_TOKEN}" \\
+                            ${vaultAddr}/v1/${vaultPath}
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                if (!vaultResponse?.trim()) {
+                    error "Vault returned empty response for path: ${vaultPath}"
+                }
+
+                // Parse response JSON
+                def vaultJson
+                try {
+                    vaultJson = readJSON text: vaultResponse
+                } catch (Exception e) {
+                    error "Failed to parse Vault response: ${e.message}"
+                }
+
+                // Extract actual secret data
+                def passwordsData = vaultJson?.data?.data
+                if (!passwordsData) {
+                    error "No passwords found under data.data at Vault path: ${vaultPath}"
+                }
+
+                // Write passwords to local file in pretty JSON
+                writeFile file: PASSWORDS_FILE,
+                        text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(passwordsData))
+                echo "passwords.json written locally at ${PASSWORDS_FILE}"
             }
-
-            if (!passwordsData?.trim()) {
-                error "Failed to fetch passwords from Vault path: ${vaultPath}"
-            }
-
-            echo "Successfully pulled secret from Vault. Writing to ${PASSWORDS_FILE}..."
-
-            // Convert Groovy map string to proper JSON and save locally
-            def jsonData
-            try {
-                jsonData = readJSON text: passwordsData
-            } catch (ignored) {
-                // If Vault returned map-style text like "map[key:value]", convert it safely
-                passwordsData = passwordsData
-                    .replaceAll('map\\[', '{')
-                    .replaceAll('\\]', '}')
-                    .replaceAll(' ([A-Za-z0-9_]+):', '"$1":')
-                    .replaceAll(':([A-Za-z0-9_]+)', ':"$1"')
-                jsonData = readJSON text: passwordsData
-            }
-
-            // Write formatted JSON to local file for compatibility with existing logic
-            writeFile file: PASSWORDS_FILE, text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(jsonData))
-            echo "passwords.json written locally."
         }
+
+
 
 
         stage('Fetch SSH Key from Vault') {
