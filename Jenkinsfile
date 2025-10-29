@@ -294,7 +294,7 @@ node {
                         }
                     }
                     echo "Server ${ip} is back online."
-                    sleep 10
+                    sleep 60
                     
                     echo "--- Finished Provisioning and Reboot on ${ip} ---"
                 
