@@ -83,8 +83,7 @@ node {
             def vaultPasswordPath = "secret/data/initialization/nodes/${envDir}/passwords.json"
             def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
 
-            // **THE FIX IS HERE: Added 'vaultSecrets: []'**
-            withVault(configuration: vaultConfig, vaultSecrets: []) {
+            withVault([configuration: vaultConfig, vaultSecrets: []]) {
                 def checkSecretCommand = "vault kv get -format=json ${vaultPasswordPath}"
                 def exitCode = sh(script: "${checkSecretCommand} > /dev/null 2>&1", returnStatus: true)
 
