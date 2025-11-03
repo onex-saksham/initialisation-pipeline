@@ -127,10 +127,10 @@ node {
 
                 if (!passwordsData) {
                     echo "DEBUG: Vault data keys found: ${vaultJson?.data?.keySet() ?: 'none'}"
-                    error "❌ Could not extract IP-based passwords map from Vault path: ${vaultPath}"
+                    error "Could not extract IP-based passwords map from Vault path: ${vaultPath}"
                 }
 
-                echo "✅ Extracted passwords for ${passwordsData.size()} IP(s): ${passwordsData.keySet()}"
+                echo "Extracted passwords for ${passwordsData.size()} IP(s): ${passwordsData.keySet()}"
 
                 // Write passwords to local file as pretty JSON
                 writeFile file: PASSWORDS_FILE, text: groovy.json.JsonOutput.prettyPrint(

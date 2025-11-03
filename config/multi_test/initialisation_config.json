@@ -139,7 +139,7 @@
     
     "backend_job": {
         "node_ip": [
-            "10.20.3.149"
+            "10.20.3.149","10.20.3.78"
     ],
         "java_version": "17",
         "python_version": "3.12.0"
