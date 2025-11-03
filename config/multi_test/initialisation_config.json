@@ -94,7 +94,6 @@
         "java_version": "17",
         "python_version": "3.12.0"
     },
-    
     "node_exporter": {
         "for": [
             "zookeeper",
