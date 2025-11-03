@@ -489,7 +489,7 @@ node {
 
                 // Generate SSH key if not present
                 def genKeyCmd = sh """
-                    ssh -i jenkins_key_from_vault.pem -p 22 -o StrictHostKeyChecking=no saksham@10.20.3.149 'bash -s' << 'ENDSSH'
+                    ssh -i jenkins_key_from_vault.pem -p 22 -o StrictHostKeyChecking=no saksham@10.20.3.149 'bash -se' <<'EOF'
                         set -euxo pipefail
                         mkdir -p ~/.ssh
                         chmod 700 ~/.ssh
@@ -503,8 +503,9 @@ node {
 
                         echo "📜 Public key content:"
                         cat ~/.ssh/id_rsa.pub
-                    ENDSSH
+                    EOF
                     """
+
 
                 def apiPubKey = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} '${genKeyCmd}'", returnStdout: true).trim()
 
