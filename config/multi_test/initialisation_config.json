@@ -19,11 +19,11 @@
         "properties": {
             "storage": "/home/saksham/data/kraft-controller-storage",            
         "ports": {
-            
             "listener": 19093
         }
         }
-    },    
+    },
+    
     "kafka": {
         "broker_ip": [
             "10.20.3.149","10.20.3.78"
