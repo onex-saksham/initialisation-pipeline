@@ -107,7 +107,6 @@
         "ports": {
             "listener": 19100
         }
-        
     },
     "kafka_exporter": {
         "ports": {
