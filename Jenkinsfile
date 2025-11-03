@@ -488,30 +488,32 @@ node {
                 echo "🔹 Setting up SSH key for API node ${apiIp}"
 
                 // Generate SSH key if not present
-                def genKeyCmd = sh """
-                    ssh -i jenkins_key_from_vault.pem -p 22 -o StrictHostKeyChecking=no saksham@10.20.3.149 'bash -se' <<'EOF'
-                        set -euxo pipefail
-                        mkdir -p ~/.ssh
-                        chmod 700 ~/.ssh
+                def apiPubKey = sh(
+                    script: """
+                        ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -se' <<'EOF'
+                            set -euxo pipefail
+                            mkdir -p ~/.ssh
+                            chmod 700 ~/.ssh
 
-                        if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                            echo "🔐 Generating new SSH keypair..."
-                            ssh-keygen -q -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
-                        else
-                            echo "✅ SSH keypair already exists."
-                        fi
+                            if [ ! -f ~/.ssh/id_rsa.pub ]; then
+                                echo "🔐 Generating new SSH keypair..."
+                                ssh-keygen -q -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
+                            else
+                                echo "✅ SSH keypair already exists."
+                            fi
 
-                        echo "📜 Public key content:"
-                        cat ~/.ssh/id_rsa.pub
-                    EOF
-                    """
+                            echo "📜 Public key content:"
+                            cat ~/.ssh/id_rsa.pub
+                        EOF
+                    """,
+                    returnStdout: true
+                ).trim()
 
-
-                def apiPubKey = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} '${genKeyCmd}'", returnStdout: true).trim()
-
-                if (!apiPubKey || !apiPubKey.startsWith("ssh-rsa")) {
-                    error "Failed to obtain public key from API node ${apiIp}"
+                if (!apiPubKey.contains("ssh-rsa")) {
+                    error "Failed to obtain a valid SSH public key from ${apiHost}"
                 }
+
+                echo "✅ Successfully retrieved public key for ${apiHost}"
 
                 echo "SSH public key retrieved from ${apiIp}"
 
