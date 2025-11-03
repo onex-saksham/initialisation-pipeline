@@ -487,7 +487,6 @@ node {
 
                 echo "🔹 Setting up SSH key for API node ${apiIp}"
 
-                // Generate SSH key if not present and fetch it
                 def generateAndFetchKey = """
                 set -e
                 echo "[INFO] Starting SSH key setup..."
@@ -497,7 +496,7 @@ node {
                 if [ ! -f ~/.ssh/id_rsa.pub ]; then
                     echo "[INFO] No SSH key found, generating..."
                     ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa <<< y > /dev/null 2>&1 || {
-                        echo "[ERROR] ssh-keygen failed with exit code $?"; exit 1;
+                        echo "[ERROR] ssh-keygen failed with exit code \$?"; exit 1;
                     }
                 else
                     echo "[INFO] SSH key already exists."
@@ -511,6 +510,7 @@ node {
                     exit 1
                 fi
                 """
+
 
 
                 def apiPubKeyRaw = sh(
