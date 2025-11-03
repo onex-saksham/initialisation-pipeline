@@ -479,85 +479,83 @@ node {
             echo "Found Backend nodes: ${backendIps}"
 
             def sshPort = config.ssh_port ?: 22
+            def overallSuccess = true
 
             apiIps.each { apiIp ->
-                echo "Configuring SSH access from API node ${apiIp}..."
-
                 def apiUser = passwords[apiIp].deploy_user
                 def apiHost = "${apiUser}@${apiIp}"
 
-                // 1 Ensure sshpass is available on API node
-                def installSshpass = """
-                    if ! command -v sshpass >/dev/null 2>&1; then
-                        echo 'Installing sshpass...'
-                        sudo apt-get update -y && sudo apt-get install -y sshpass
-                    fi
-                """
-                sh "echo '${installSshpass}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
+                echo "🔹 Setting up SSH key for API node ${apiIp}"
 
-                // 2 Generate SSH key if not exists, safely
-                def genKeyCmd = '''
+                // Generate SSH key if not present
+                def genKeyCmd = """
                     set -e
-                    mkdir -p ~/.ssh; chmod 700 ~/.ssh
+                    mkdir -p ~/.ssh && chmod 700 ~/.ssh
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH key..."
                         ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
                     fi
                     cat ~/.ssh/id_rsa.pub
-                '''
-                def apiPubKey = sh(script: "echo '${genKeyCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'", returnStdout: true).trim()
+                """
+                def apiPubKey = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} '${genKeyCmd}'", returnStdout: true).trim()
 
                 if (!apiPubKey || !apiPubKey.startsWith("ssh-rsa")) {
-                    error "Failed to obtain a valid SSH public key from API node ${apiIp}"
+                    error "❌ Failed to obtain public key from API node ${apiIp}"
                 }
 
-                echo " Retrieved SSH public key from ${apiIp}"
+                echo "✅ SSH public key retrieved from ${apiIp}"
 
-                // Base64-encode public key to safely transfer over SSH
-                def apiPubKeyB64 = sh(script: "echo '${apiPubKey}' | base64 -w 0", returnStdout: true).trim()
-
-                // Distribute this key to all backend nodes
                 backendIps.each { backendIp ->
                     if (backendIp == apiIp) {
-                        echo "Skipping distribution from ${apiIp} to itself."
+                        echo "Skipping self (${backendIp})"
                         return
                     }
 
                     def backendUser = passwords[backendIp].deploy_user
                     def backendPass = passwords[backendIp].deploy_password
 
-                    echo "Adding API public key from ${apiIp} to backend ${backendIp}..."
+                    echo "🔸 Copying API key to backend ${backendIp}"
 
-                    def distributeCmd = """
-                        set -e
+                    // Add the API’s pubkey to backend authorized_keys using password-based ssh
+                    def addKeyCmd = """
                         mkdir -p ~/.ssh && chmod 700 ~/.ssh
-                        echo '${apiPubKeyB64}' | base64 -d >> ~/.ssh/authorized_keys
+                        echo '${apiPubKey.replace("'", "'\"'\"'")}' >> ~/.ssh/authorized_keys
                         chmod 600 ~/.ssh/authorized_keys
                     """
 
-                    def sendCmd = """
-                        sshpass -p '${backendPass}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} '${distributeCmd}'
+                    def sendKeyCmd = """
+                        sshpass -p '${backendPass}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} '${addKeyCmd}'
                     """
 
-                    // Send the key from API node to backend
-                    sh "echo '${sendCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
+                    def result = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} \"${sendKeyCmd}\"", returnStatus: true)
 
-                    // 4️⃣ Verify SSH connectivity
-                    def verifyCmd = """
-                        ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} 'echo SSH connection successful'
-                    """
-                    def result = sh(script: "echo '${verifyCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'", returnStatus: true)
-
-                    if (result == 0) {
-                        echo "Verified SSH connectivity from ${apiIp} ➜ ${backendIp}"
+                    if (result != 0) {
+                        echo "❌ Failed to add SSH key from API ${apiIp} to backend ${backendIp}"
+                        overallSuccess = false
                     } else {
-                        echo "SSH connectivity test failed from ${apiIp} to ${backendIp}"
+                        echo "✅ Added API key to backend ${backendIp}"
+                    }
+
+                    // Test passwordless SSH from API → Backend
+                    def verifyCmd = "ssh -p ${sshPort} -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${backendUser}@${backendIp} 'echo SSH connection successful'"
+                    def verifyResult = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} \"${verifyCmd}\"", returnStatus: true)
+
+                    if (verifyResult == 0) {
+                        echo "✅ Verified passwordless SSH from ${apiIp} → ${backendIp}"
+                    } else {
+                        echo "⚠️ SSH connectivity test failed from ${apiIp} → ${backendIp}"
+                        overallSuccess = false
                     }
                 }
             }
 
-            echo "--- Completed Inter-Service SSH Configuration ---"
+            if (!overallSuccess) {
+                error "❌ Inter-service SSH configuration failed. Check logs above."
+            } else {
+                echo "--- ✅ Completed Inter-Service SSH Configuration Successfully ---"
+            }
         }
+
 
     } catch (err) {
         echo "Pipeline failed. Please check the logs and build artifacts."
