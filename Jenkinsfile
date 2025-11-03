@@ -2,7 +2,6 @@ def config = [:]
 def passwords = [:]
 def nodesToProvision = [:]
 
-def VAULT_CREDENTIAL_ID = 'vault-approle-credential' // Need to remove this shift this to token
 def JENKINS_KEY_FILE = "jenkins_key_from_vault.pem"
 
 // The entire pipeline runs on a node (agent)
@@ -120,25 +119,47 @@ node {
             passwords = readJSON file: PASSWORDS_FILE
         }
 
-
-
-
-
         stage('Fetch SSH Key from Vault') {
-            echo "Fetching Jenkins SSH private key from Vault..."
-            def vaultConfig = [vaultCredentialId: VAULT_CREDENTIAL_ID]
-            def secretsToFetch = [
-                [path: 'secret/initialization/jenkins/ssh_key', engineVersion: 2, secretValues: [
-                    [envVar: 'SSH_PRIVATE_KEY_CONTENT', vaultKey: 'ssh-key']
-                ]]
-            ]
+            echo "Fetching Jenkins SSH private key from Vault using root token..."
 
-            withVault([configuration: vaultConfig, vaultSecrets: secretsToFetch]) {
-                writeFile(file: JENKINS_KEY_FILE, text: env.SSH_PRIVATE_KEY_CONTENT)
+            // Use Vault token (same as passwords stage)
+            withCredentials([string(credentialsId: 'vault-root-token', variable: 'VAULT_ROOT_TOKEN')]) {
+                def vaultPath = "secret/data/initialization/jenkins/ssh_key"
+                def vaultAddr = "http://localhost:8200"
+
+                // Fetch SSH private key using Vault HTTP API
+                def vaultResponse = sh(
+                    script: """
+                        curl -s -H "X-Vault-Token: ${VAULT_ROOT_TOKEN}" \\
+                             ${vaultAddr}/v1/${vaultPath}
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                if (!vaultResponse?.trim()) {
+                    error "Vault returned empty response for path: ${vaultPath}"
+                }
+
+                def vaultJson
+                try {
+                    vaultJson = readJSON text: vaultResponse
+                } catch (Exception e) {
+                    error "Failed to parse Vault response: ${e.message}"
+                }
+
+                // Extract the actual SSH key data
+                def sshKeyData = vaultJson?.data?.data
+                if (!sshKeyData || !sshKeyData['ssh-key']) {
+                    error "No valid SSH key found under data.data['ssh-key'] at Vault path: ${vaultPath}"
+                }
+
+                // Write SSH key to local PEM file
+                writeFile(file: JENKINS_KEY_FILE, text: sshKeyData['ssh-key'].trim() + "\n")
                 sh "chmod 600 ${JENKINS_KEY_FILE}"
+                echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
             }
-            echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
         }
+
 
 
         stage('Identify Target Nodes and Dependencies') {
@@ -246,8 +267,8 @@ node {
                         echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config                        
                         echo "Setting secure permissions on home directory..."
                         echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}                        
-                        echo "Changing root password..."
-                        echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
+                        // echo "Changing root password..."
+                        // echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
                         echo "Setting timezone to Asia/Kolkata..."
                         echo '${initialPass}' | sudo -S timedatectl set-timezone Asia/Kolkata
                     """
@@ -279,21 +300,21 @@ node {
                     sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                     
                     // Step 4: Trigger a reboot to apply all core changes
-                    echo "Step 4: Triggering reboot on ${ip}"
-                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+                    // echo "Step 4: Triggering reboot on ${ip}"
+                    // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
-                    // Step 5: Wait for the server to come back online
-                    echo "Step 5: Waiting for ${ip} to come back online..."
-                    timeout(time: 5, unit: 'MINUTES') {
-                        waitUntil {
-                            try {
-                                def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
-                                return status == 0
-                            } catch (Exception e) { return false }
-                        }
-                    }
-                    echo "Server ${ip} is back online."
-                    sleep 60
+                    // // Step 5: Wait for the server to come back online
+                    // echo "Step 5: Waiting for ${ip} to come back online..."
+                    // timeout(time: 5, unit: 'MINUTES') {
+                    //     waitUntil {
+                    //         try {
+                    //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+                    //             return status == 0
+                    //         } catch (Exception e) { return false }
+                    //     }
+                    // }
+                    // echo "Server ${ip} is back online."
+                    // sleep 60
                     
                     echo "--- Finished Provisioning and Reboot on ${ip} ---"
                 
@@ -340,7 +361,7 @@ node {
 
                         switch (componentName) {
                             case 'backend_job':
-                                remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3-dev zlib1g-dev libssl-dev\n"
+                                remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev\n"
                                 break
                             case 'doris_be':
                                 remoteCommand += '''
@@ -348,7 +369,8 @@ node {
                                     sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
                                     sudo sysctl --system
                                     echo 'Disabling swap...'
-                                    sudo swapoff -a && sudo sed -i '/swap/d' /etc/fstab
+                                    sudo swapoff -a && sudo sed -i 's|^\(/swap.img[[:space:]]\+none[[:space:]]\+swap[[:space:]]\+sw[[:space:]]\+0[[:space:]]\+0\)|#\1|' /etc/fstab
+
                                 '''
                                 break
                             case 'kafka':
@@ -392,7 +414,6 @@ node {
                     def remoteCommand = """
                         set -e
                         chmod +x ${remoteScriptPath}
-                        # IMPORTANT: Your install_java_python.sh script MUST handle these arguments
                         sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
                         echo "\\n--- Displaying last 30 lines of installation log ---"
                         tail -n 30 ${remoteLogPath}
@@ -418,7 +439,6 @@ node {
 
             echo "--- Starting Inter-Service SSH Configuration ---"
 
-            // **FIX 1: Correctly and efficiently find all unique IPs first.**
             def apiIps = nodesToProvision.findAll { ip, componentList ->
                 componentList.any { it.component == 'api' }
             }.keySet()
@@ -435,19 +455,15 @@ node {
             echo "Found API nodes: ${apiIps}"
             echo "Found Backend nodes: ${backendIps}"
 
-            // For each API node, generate a key and distribute it to all backend nodes
             apiIps.each { apiIp ->
                 echo "Configuring API node at ${apiIp}..."
                 def apiDeployUser = passwords[apiIp].deploy_user
                 def apiDeployHost = "${apiDeployUser}@${apiIp}"
                 def sshPort = config.ssh_port ?: 22
 
-                // Step 1: Ensure sshpass is installed on the API node
-                // **FIX 2: Corrected the installSshpass command for clarity and reliability**
                 def installSshpass = "command -v sshpass >/dev/null 2>&1 || { echo 'sshpass not found, installing...'; sudo apt-get update && sudo apt-get install -y sshpass; }"
                 sh 'echo \'' + installSshpass + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
 
-                // Step 2: Generate/retrieve SSH key from the API node
                 def getKeyCommand = """
                     set -e
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
@@ -462,9 +478,7 @@ node {
                     error "FATAL: Failed to get public key from API node ${apiIp}"
                 }
 
-                // Step 3: Distribute the API node's public key to every backend node
                 backendIps.each { backendIp ->
-                    // Don't copy key to self if an API node is also a backend node
                     if (apiIp == backendIp) {
                         echo " -> Skipping key distribution from ${apiIp} to itself."
                         return
@@ -477,7 +491,6 @@ node {
                     def distributeKeyCommand = "sshpass -p '${backendDeployPass}' ssh-copy-id -p ${sshPort} -o StrictHostKeyChecking=no ${backendDeployUser}@${backendIp}"
                     sh 'echo \'' + distributeKeyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
 
-                    // Step 4: Verify connection from API to Backend
                     def verifyCommand = "ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendDeployUser}@${backendIp} 'echo Successfully connected from API to Backend'"
                     sh 'echo \'' + verifyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
                 }

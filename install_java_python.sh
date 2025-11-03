@@ -19,50 +19,52 @@ sudo apt-get install -y wget curl software-properties-common
 # This variable will hold the path of the last Java version installed, to set it as the default JAVA_HOME
 LATEST_JAVA_HOME_PATH=""
 
-# ==================================
-#      Install Python Versions
-# ==================================
+######################################
+#      Install Python Versions       #
+######################################
 if [ -n "$PYTHON_VERSIONS_STRING" ]; then
-    # Track the last version to set it as default later
-    LAST_PYTHON_XY_VERSION=""
     for FULL_PYTHON_VERSION in $PYTHON_VERSIONS_STRING; do
         PYTHON_XY_VERSION=$(echo "$FULL_PYTHON_VERSION" | cut -d. -f1,2)
         echo ">>> Processing Python ${PYTHON_XY_VERSION}..."
 
-        # **CHECK 1: Check if the version is already installed before trying to install it.**
-        if command -v "python${PYTHON_XY_VERSION}" &> /dev/null; then
-            # *** ADDED LOG FOR SKIPPING ***
-            echo "Skipping Python ${PYTHON_XY_VERSION} (already installed)."
+        # Check if version is already installed
+        if command -v "python${PYTHON_XY_VERSION}" &>/dev/null; then
+            echo "--> Python ${PYTHON_XY_VERSION} is already installed. Skipping installation."
         else
-            echo "--> Installing Python ${PYTHON_XY_VERSION} from APT..."
-            # The deadsnakes PPA provides a wider range of Python versions for Ubuntu
-            sudo add-apt-repository -y ppa:deadsnakes/ppa
-            sudo apt-get update
-            sudo apt-get install -y "python${PYTHON_XY_VERSION}" "python${PYTHON_XY_VERSION}-dev" "python${PYTHON_XY_VERSION}-venv" python3-pip
+            echo "--> Attempting to install Python ${PYTHON_XY_VERSION} from APT..."
+
+            # Try installing specific version; capture failure gracefully
+            if sudo apt-get install -y python${PYTHON_XY_VERSION} python${PYTHON_XY_VERSION}-dev python${PYTHON_XY_VERSION}-venv python3-pip; then
+                echo "Successfully installed Python ${PYTHON_XY_VERSION}."
+            else
+                echo "Failed to install Python ${PYTHON_XY_VERSION}. Falling back to updating development dependencies..."
+
+                # Update system and fallback to latest Python dev tools
+                sudo apt-get update -y
+                sudo apt-get install -y python3 python3-dev python3-venv python3-pip
+                echo "Installed latest available Python3 development environment."
+            fi
         fi
-        
-        # Make this version a candidate for the default 'python3' command
-        sudo update-alternatives --install /usr/bin/python3 python3 "/usr/bin/python${PYTHON_XY_VERSION}" 1
-        LAST_PYTHON_XY_VERSION=$PYTHON_XY_VERSION
+
+        # Always ensure pip, venv, and dev dependencies are up-to-date
+        echo "--> Upgrading pip and development dependencies..."
+        python3 -m pip install --upgrade pip setuptools wheel virtualenv || true
+        echo "Python development environment refreshed for ${PYTHON_XY_VERSION}."
+        echo
     done
-    # After installing all, explicitly set the last one found as the default
-    if [ -n "$LAST_PYTHON_XY_VERSION" ]; then
-        echo "--> Setting default python3 to python${LAST_PYTHON_XY_VERSION}"
-        sudo update-alternatives --set python3 "/usr/bin/python${LAST_PYTHON_XY_VERSION}"
-    fi
 fi
 
-# ==================================
-#         Install Java Versions
-# ==================================
+
+######################################
+#         Install Java Versions        #
+######################################
 if [ -n "$JAVA_VERSIONS_STRING" ]; then
     for JAVA_VERSION in $JAVA_VERSIONS_STRING; do
         echo ">>> Processing Java (OpenJDK) ${JAVA_VERSION}..."
         
         # **CHECK 2: Use dpkg to check if the JDK package is already installed.**
         if dpkg -s "openjdk-${JAVA_VERSION}-jdk" &> /dev/null; then
-            # *** ADDED LOG FOR SKIPPING ***
-            echo "Skipping OpenJDK ${JAVA_VERSION} (already installed)."
+            echo "--> OpenJDK ${JAVA_VERSION} is already installed. Skipping installation."
         else
             echo "--> Installing OpenJDK ${JAVA_VERSION} from APT..."
             sudo apt-get install -y "openjdk-${JAVA_VERSION}-jdk"
@@ -74,9 +76,9 @@ if [ -n "$JAVA_VERSIONS_STRING" ]; then
     done
 fi
 
-# ==================================
-#  Update System & User Environments
-# ==================================
+######################################
+#  Update System & User Environments #
+######################################
 if [ -n "$LATEST_JAVA_HOME_PATH" ] && [ -d "$LATEST_JAVA_HOME_PATH" ]; then
     echo ">>> Setting system-wide JAVA_HOME to the last installed version: ${LATEST_JAVA_HOME_PATH}"
     sudo tee /etc/profile.d/jdk_custom.sh > /dev/null << EOF
@@ -86,9 +88,9 @@ EOF
     sudo chmod +x /etc/profile.d/jdk_custom.sh
 fi
 
-# ==================================
-#           Final Verification
-# ==================================
+######################################
+#           Final Verification       #
+######################################
 echo ">>> Verifying all requested versions are installed..."
 all_ok=true
 
@@ -97,10 +99,10 @@ if [ -n "$PYTHON_VERSIONS_STRING" ]; then
     for FULL_PYTHON_VERSION in $PYTHON_VERSIONS_STRING; do
         PYTHON_XY_VERSION=$(echo "$FULL_PYTHON_VERSION" | cut -d. -f1,2)
         if ! command -v "python${PYTHON_XY_VERSION}" &> /dev/null; then
-            echo "VERIFICATION FAILED: Python ${PYTHON_XY_VERSION} is not installed."
+            echo " VERIFICATION FAILED: Python ${PYTHON_XY_VERSION} is not installed."
             all_ok=false
         else
-            echo "Verified: Python ${PYTHON_XY_VERSION} is installed."
+            echo " Verified: Python ${PYTHON_XY_VERSION} is installed."
         fi
     done
 fi
@@ -109,7 +111,7 @@ fi
 if [ -n "$JAVA_VERSIONS_STRING" ]; then
     for JAVA_VERSION in $JAVA_VERSIONS_STRING; do
         if ! dpkg -s "openjdk-${JAVA_VERSION}-jdk" &> /dev/null; then
-            echo "VERIFICATION FAILED: OpenJDK ${JAVA_VERSION} is not installed."
+            echo " VERIFICATION FAILED: OpenJDK ${JAVA_VERSION} is not installed."
             all_ok=false
         else
             echo "Verified: OpenJDK ${JAVA_VERSION} is installed."
