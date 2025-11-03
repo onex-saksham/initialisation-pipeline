@@ -1,5 +1,4 @@
 {
-    "type": "mutli",
     "ssh_port": "22",
     "zookeeper": {
         "node_ip": [

@@ -457,68 +457,96 @@ node {
         stage('Configure Inter-Service SSH') {
             if (nodesToProvision.size() <= 1) {
                 echo "Skipping inter-service SSH configuration for single-node deployment."
-                return 
+                return
             }
 
             echo "--- Starting Inter-Service SSH Configuration ---"
 
-            def apiIps = nodesToProvision.findAll { ip, componentList ->
-                componentList.any { it.component == 'api' }
+            def apiIps = nodesToProvision.findAll { ip, comps ->
+                comps.any { it.component == 'api' }
             }.keySet()
 
-            def backendIps = nodesToProvision.findAll { ip, componentList ->
-                componentList.any { it.component == 'backend_job' }
+            def backendIps = nodesToProvision.findAll { ip, comps ->
+                comps.any { it.component == 'backend_job' }
             }.keySet()
 
             if (apiIps.isEmpty() || backendIps.isEmpty()) {
-                echo "Warning: Missing 'api' or 'backend_job' components in the plan. Skipping SSH setup."
+                echo "Missing 'api' or 'backend_job' nodes in the plan. Skipping SSH setup."
                 return
             }
-            
+
             echo "Found API nodes: ${apiIps}"
             echo "Found Backend nodes: ${backendIps}"
 
+            def sshPort = config.ssh_port ?: 22
+
             apiIps.each { apiIp ->
-                echo "Configuring API node at ${apiIp}..."
-                def apiDeployUser = passwords[apiIp].deploy_user
-                def apiDeployHost = "${apiDeployUser}@${apiIp}"
-                def sshPort = config.ssh_port ?: 22
+                echo "Configuring SSH access from API node ${apiIp}..."
 
-                def installSshpass = "command -v sshpass >/dev/null 2>&1 || { echo 'sshpass not found, installing...'; sudo apt-get update && sudo apt-get install -y sshpass; }"
-                sh 'echo \'' + installSshpass + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
+                def apiUser = passwords[apiIp].deploy_user
+                def apiHost = "${apiUser}@${apiIp}"
 
-                def getKeyCommand = """
+                // 1️⃣ Ensure sshpass is available on API node
+                def installSshpass = """
+                    if ! command -v sshpass >/dev/null 2>&1; then
+                        echo 'Installing sshpass...'
+                        sudo apt-get update -y && sudo apt-get install -y sshpass
+                    fi
+                """
+                sh "echo '${installSshpass}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
+
+                // 2️⃣ Generate SSH key if not exists, safely with proper quoting
+                def genKeyCmd = '''
                     set -e
+                    mkdir -p ~/.ssh; chmod 700 ~/.ssh
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                        echo 'Generating new SSH key on API node...'
-                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
+                        echo "Generating new SSH key..."
+                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
                     fi
                     cat ~/.ssh/id_rsa.pub
-                """
-                def apiPublicKey = sh(script: 'echo \'' + getKeyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\'', returnStdout: true).trim()
+                '''
+                def apiPubKey = sh(script: "echo '${genKeyCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'", returnStdout: true).trim()
 
-                if (!apiPublicKey) {
-                    error "FATAL: Failed to get public key from API node ${apiIp}"
+                if (!apiPubKey || !apiPubKey.startsWith("ssh-rsa")) {
+                    error "Failed to obtain a valid SSH public key from API node ${apiIp}"
                 }
 
+                echo "API key retrieved from ${apiIp}"
+
+                // 3️⃣ Distribute this key to all backend nodes
                 backendIps.each { backendIp ->
-                    if (apiIp == backendIp) {
-                        echo " -> Skipping key distribution from ${apiIp} to itself."
+                    if (backendIp == apiIp) {
+                        echo "Skipping distribution from ${apiIp} to itself."
                         return
                     }
 
-                    echo " -> Distributing key from ${apiIp} to backend node ${backendIp}"
-                    def backendDeployUser = passwords[backendIp].deploy_user
-                    def backendDeployPass = passwords[backendIp].deploy_password
+                    def backendUser = passwords[backendIp].deploy_user
+                    def backendPass = passwords[backendIp].deploy_password
 
-                    def distributeKeyCommand = "sshpass -p '${backendDeployPass}' ssh-copy-id -p ${sshPort} -o StrictHostKeyChecking=no ${backendDeployUser}@${backendIp}"
-                    sh 'echo \'' + distributeKeyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
+                    echo "Adding API public key from ${apiIp} to backend ${backendIp}..."
 
-                    def verifyCommand = "ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendDeployUser}@${backendIp} 'echo Successfully connected from API to Backend'"
-                    sh 'echo \'' + verifyCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + apiDeployHost + ' \'bash -s\''
+                    // Send the key directly (mimics Python approach)
+                    def distributeCmd = """
+                        mkdir -p ~/.ssh; chmod 700 ~/.ssh
+                        echo '${apiPubKey.replace("'", "'\"'\"'")}' >> ~/.ssh/authorized_keys
+                        chmod 600 ~/.ssh/authorized_keys
+                    """
+
+                    // Use sshpass to connect password-based to backend
+                    def sendCmd = """
+                        sshpass -p '${backendPass}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} '${distributeCmd}'
+                    """
+                    sh "echo '${sendCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
+
+                    // 4️⃣ Verify SSH connectivity
+                    def verifyCmd = """
+                        ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} 'echo SSH connection successful'
+                    """
+                    sh "echo '${verifyCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
                 }
             }
-            echo "--- Finished Inter-Service SSH Configuration ---"
+
+            echo "--- Completed Inter-Service SSH Configuration ---"
         }
     } catch (err) {
         echo "Pipeline failed. Please check the logs and build artifacts."
