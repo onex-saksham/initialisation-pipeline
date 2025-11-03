@@ -247,212 +247,212 @@ node {
             }
         }
 
-        stage('Provision and Reboot Servers') {            
-                sh """
-                    command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
-                    command -v nc >/dev/null 2>&1 || {
-                        echo 'netcat (nc) not found on agent, attempting to install it...'
-                        sudo apt-get update && sudo apt-get install -y netcat-openbsd
-                    }
-                """
+        // stage('Provision and Reboot Servers') {            
+        //         sh """
+        //             command -v sshpass >/dev/null 2>&1 || { echo >&2 "sshpass is not installed. Aborting."; exit 1; }
+        //             command -v nc >/dev/null 2>&1 || {
+        //                 echo 'netcat (nc) not found on agent, attempting to install it...'
+        //                 sudo apt-get update && sudo apt-get install -y netcat-openbsd
+        //             }
+        //         """
 
-                nodesToProvision.each { ip, componentList ->
-                    echo "--- Starting Provisioning on ${ip} ---"
+        //         nodesToProvision.each { ip, componentList ->
+        //             echo "--- Starting Provisioning on ${ip} ---"
                     
-                    def nodePasswords = passwords[ip]
-                    if (!nodePasswords) {
-                        error "FATAL: No password configuration found for IP: ${ip}"
-                    }
-                    def sshPort = config.ssh_port ?: 22
-                    def deployUser = nodePasswords.deploy_user
-                    def initialUser = nodePasswords.root_user
-                    def initialPass = nodePasswords.root_password
-                    def initialHost = "${initialUser}@${ip}"
+        //             def nodePasswords = passwords[ip]
+        //             if (!nodePasswords) {
+        //                 error "FATAL: No password configuration found for IP: ${ip}"
+        //             }
+        //             def sshPort = config.ssh_port ?: 22
+        //             def deployUser = nodePasswords.deploy_user
+        //             def initialUser = nodePasswords.root_user
+        //             def initialPass = nodePasswords.root_password
+        //             def initialHost = "${initialUser}@${ip}"
 
-                    // Step 1: Create a non-root user for Jenkins (runs once per server)
-                    echo "Step 1: Creating deployment user '${deployUser}' on ${ip}"
+        //             // Step 1: Create a non-root user for Jenkins (runs once per server)
+        //             echo "Step 1: Creating deployment user '${deployUser}' on ${ip}"
                     
-                    def createUserScript = """
-                        set -e
-                        echo "Creating group and user..."
-                        echo '${initialPass}' | sudo -S groupadd -f ${deployUser}
-                        echo '${initialPass}' | sudo -S id ${deployUser} &>/dev/null || sudo -S useradd -m -g ${deployUser} -s /bin/bash ${deployUser}                        
-                        echo "Setting password for ${deployUser}..."
-                        echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser}:${nodePasswords.deploy_password}" | chpasswd'                        
-                        echo "Granting NOPASSWD sudo privileges..."
-                        echo '${initialPass}' | sudo -S usermod -aG sudo ${deployUser}
-                        echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/${deployUser}'
-                        echo '${initialPass}' | sudo -S chmod 440 /etc/sudoers.d/${deployUser}
-                        echo "Enabling user services to run after logout..."
-                        echo '${initialPass}' | sudo -S loginctl enable-linger ${deployUser}
-                        echo "Creating directories for systemd user services..."
-                        echo '${initialPass}' | sudo -S mkdir -p /home/${deployUser}/.config/systemd/user
-                        echo '${initialPass}' | sudo -S chown -R ${deployUser}:${deployUser} /home/${deployUser}/.config
-                        echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config                        
-                        echo "Setting secure permissions on home directory..."
-                        echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}                        
-                        echo "Changing root password..."
-                        echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
-                        echo "Setting timezone to Asia/Kolkata..."
-                        echo '${initialPass}' | sudo -S timedatectl set-timezone Asia/Kolkata
-                    """
-                    withEnv(["REMOTE_SCRIPT=${createUserScript}"]) {
-                        sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + initialPass + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
-                    }
+        //             def createUserScript = """
+        //                 set -e
+        //                 echo "Creating group and user..."
+        //                 echo '${initialPass}' | sudo -S groupadd -f ${deployUser}
+        //                 echo '${initialPass}' | sudo -S id ${deployUser} &>/dev/null || sudo -S useradd -m -g ${deployUser} -s /bin/bash ${deployUser}                        
+        //                 echo "Setting password for ${deployUser}..."
+        //                 echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser}:${nodePasswords.deploy_password}" | chpasswd'                        
+        //                 echo "Granting NOPASSWD sudo privileges..."
+        //                 echo '${initialPass}' | sudo -S usermod -aG sudo ${deployUser}
+        //                 echo '${initialPass}' | sudo -S sh -c 'echo "${deployUser} ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/${deployUser}'
+        //                 echo '${initialPass}' | sudo -S chmod 440 /etc/sudoers.d/${deployUser}
+        //                 echo "Enabling user services to run after logout..."
+        //                 echo '${initialPass}' | sudo -S loginctl enable-linger ${deployUser}
+        //                 echo "Creating directories for systemd user services..."
+        //                 echo '${initialPass}' | sudo -S mkdir -p /home/${deployUser}/.config/systemd/user
+        //                 echo '${initialPass}' | sudo -S chown -R ${deployUser}:${deployUser} /home/${deployUser}/.config
+        //                 echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config                        
+        //                 echo "Setting secure permissions on home directory..."
+        //                 echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}                        
+        //                 echo "Changing root password..."
+        //                 echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
+        //                 echo "Setting timezone to Asia/Kolkata..."
+        //                 echo '${initialPass}' | sudo -S timedatectl set-timezone Asia/Kolkata
+        //             """
+        //             withEnv(["REMOTE_SCRIPT=${createUserScript}"]) {
+        //                 sh 'echo "$REMOTE_SCRIPT" | sshpass -p \'' + initialPass + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + initialHost + ' \'bash -s\''
+        //             }
 
-                    def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/jenkins_new_key.pub'
+        //             def PUBLIC_KEY_PATH = '/home/jenkins/.ssh/jenkins_new_key.pub'
 
-                    // Step 2: Distribute the agent's public SSH key (runs once per server)
-                    echo "Step 2: Distributing local SSH public key to new user on ${ip}"
-                    if (!fileExists(PUBLIC_KEY_PATH)) {
-                        error "FATAL: Public key file not found at ${PUBLIC_KEY_PATH} on the Jenkins agent."
-                    }
-                    def publicKey = readFile(file: PUBLIC_KEY_PATH).trim()
-                    def setupSshCommand = """
-                        set -e
-                        echo 'Setting up SSH directory and authorized_keys file...'
-                        mkdir -p ~/.ssh && chmod 700 ~/.ssh
-                        touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-                        echo 'Adding public key to authorized_keys...'
-                        grep -q -F "${publicKey}" ~/.ssh/authorized_keys || echo '${publicKey}' >> ~/.ssh/authorized_keys
-                    """
-                    def deployHost = "${deployUser}@${ip}"
-                    sh 'echo \'' + setupSshCommand + '\' | sshpass -p \'' + nodePasswords.deploy_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+        //             // Step 2: Distribute the agent's public SSH key (runs once per server)
+        //             echo "Step 2: Distributing local SSH public key to new user on ${ip}"
+        //             if (!fileExists(PUBLIC_KEY_PATH)) {
+        //                 error "FATAL: Public key file not found at ${PUBLIC_KEY_PATH} on the Jenkins agent."
+        //             }
+        //             def publicKey = readFile(file: PUBLIC_KEY_PATH).trim()
+        //             def setupSshCommand = """
+        //                 set -e
+        //                 echo 'Setting up SSH directory and authorized_keys file...'
+        //                 mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        //                 touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+        //                 echo 'Adding public key to authorized_keys...'
+        //                 grep -q -F "${publicKey}" ~/.ssh/authorized_keys || echo '${publicKey}' >> ~/.ssh/authorized_keys
+        //             """
+        //             def deployHost = "${deployUser}@${ip}"
+        //             sh 'echo \'' + setupSshCommand + '\' | sshpass -p \'' + nodePasswords.deploy_password + '\' ssh -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
                     
-                    // Step 3: Verify passwordless SSH access is working
-                    echo "Step 3: Verifying passwordless SSH access"
-                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
+        //             // Step 3: Verify passwordless SSH access is working
+        //             echo "Step 3: Verifying passwordless SSH access"
+        //             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'echo SSH key authentication successful'"
                     
-                    // Step 4: Trigger a reboot to apply all core changes
-                    // echo "Step 4: Triggering reboot on ${ip}"
-                    // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
+        //             // Step 4: Trigger a reboot to apply all core changes
+        //             // echo "Step 4: Triggering reboot on ${ip}"
+        //             // sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployUser}@${ip} 'sudo reboot' || true"
 
-                    // // Step 5: Wait for the server to come back online
-                    // echo "Step 5: Waiting for ${ip} to come back online..."
-                    // timeout(time: 5, unit: 'MINUTES') {
-                    //     waitUntil {
-                    //         try {
-                    //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
-                    //             return status == 0
-                    //         } catch (Exception e) { return false }
-                    //     }
-                    // }
-                    // echo "Server ${ip} is back online."
-                    // sleep 60
+        //             // // Step 5: Wait for the server to come back online
+        //             // echo "Step 5: Waiting for ${ip} to come back online..."
+        //             // timeout(time: 5, unit: 'MINUTES') {
+        //             //     waitUntil {
+        //             //         try {
+        //             //             def status = sh(script: "nc -z -w 5 ${ip} ${sshPort}", returnStatus: true)
+        //             //             return status == 0
+        //             //         } catch (Exception e) { return false }
+        //             //     }
+        //             // }
+        //             // echo "Server ${ip} is back online."
+        //             // sleep 60
                     
-                    echo "--- Finished Provisioning and Reboot on ${ip} ---"
+        //             echo "--- Finished Provisioning and Reboot on ${ip} ---"
                 
-            }
-        }
+        //     }
+        // }
 
-        stage('Configure Components') {
+        // stage('Configure Components') {
             
-                // Outer loop: Iterate through each server ONCE.
-                nodesToProvision.each { ip, componentList ->
-                    echo "--- Configuring ALL Components on ${ip} ---"
-                    def deployUser = passwords[ip].deploy_user
-                    def sshPort = config.ssh_port ?: 22
-                    def deployHost = "${deployUser}@${ip}"
+        //         // Outer loop: Iterate through each server ONCE.
+        //         nodesToProvision.each { ip, componentList ->
+        //             echo "--- Configuring ALL Components on ${ip} ---"
+        //             def deployUser = passwords[ip].deploy_user
+        //             def sshPort = config.ssh_port ?: 22
+        //             def deployHost = "${deployUser}@${ip}"
 
-                    // Start with the base script that runs for every server.
-                    def remoteCommand = '''
-                        set -e
-                        echo '>>> Disabling automatic unattended upgrades...'
-                        sudo systemctl stop unattended-upgrades.service || true
-                        sudo systemctl disable unattended-upgrades.service || true
-                        echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
-                        echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
-                        echo '>>> Updating package lists...'
-                        sudo apt-get update -y || true
-                    '''
+        //             // Start with the base script that runs for every server.
+        //             def remoteCommand = '''
+        //                 set -e
+        //                 echo '>>> Disabling automatic unattended upgrades...'
+        //                 sudo systemctl stop unattended-upgrades.service || true
+        //                 sudo systemctl disable unattended-upgrades.service || true
+        //                 echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
+        //                 echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
+        //                 echo '>>> Updating package lists...'
+        //                 sudo apt-get update -y || true
+        //             '''
 
-                    // Inner loop: Iterate through EACH component planned for this IP.
-                    componentList.each { componentDetails ->
-                        def componentName = componentDetails.component
-                        def componentData = componentDetails.data
-                        echo " -> Adding configuration for component: ${componentName}"
+        //             // Inner loop: Iterate through EACH component planned for this IP.
+        //             componentList.each { componentDetails ->
+        //                 def componentName = componentDetails.component
+        //                 def componentData = componentDetails.data
+        //                 echo " -> Adding configuration for component: ${componentName}"
 
-                        // Append storage directory commands if they exist
-                        def storagePath = componentData.properties?.storage
-                        if (storagePath) {
-                            remoteCommand += """
-                                echo 'Creating storage directory: ${storagePath}...'
-                                sudo mkdir -p ${storagePath}
-                                sudo chown -R ${deployUser}:${deployUser} ${storagePath}
-                                sudo chmod -R 2775 ${storagePath}
-                            """
-                        }                        
+        //                 // Append storage directory commands if they exist
+        //                 def storagePath = componentData.properties?.storage
+        //                 if (storagePath) {
+        //                     remoteCommand += """
+        //                         echo 'Creating storage directory: ${storagePath}...'
+        //                         sudo mkdir -p ${storagePath}
+        //                         sudo chown -R ${deployUser}:${deployUser} ${storagePath}
+        //                         sudo chmod -R 2775 ${storagePath}
+        //                     """
+        //                 }                        
 
-                        switch (componentName) {
-                            case 'backend_job':
-                                remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev\n"
-                                break
-                            case 'doris_be':
-                                remoteCommand += '''
-                                    echo 'Applying doris_be kernel settings...'
-                                    sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
-                                    sudo sysctl --system
-                                    echo 'Disabling swap...'
-                                    sudo swapoff -a && sudo sed -i 's|^\\(/swap.img[[:space:]]\\+none[[:space:]]\\+swap[[:space:]]\\+sw[[:space:]]\\+0[[:space:]]\\+0\\)|#\\1|' /etc/fstab
-                                '''
-                                break
-                            case 'kafka':
-                                remoteCommand += "echo 'Installing kcat for kafka...' && sudo apt-get install -y kcat\n"
-                                break
-                        }
-                    }
+        //                 switch (componentName) {
+        //                     case 'backend_job':
+        //                         remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev\n"
+        //                         break
+        //                     case 'doris_be':
+        //                         remoteCommand += '''
+        //                             echo 'Applying doris_be kernel settings...'
+        //                             sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
+        //                             sudo sysctl --system
+        //                             echo 'Disabling swap...'
+        //                             sudo swapoff -a && sudo sed -i 's|^\\(/swap.img[[:space:]]\\+none[[:space:]]\\+swap[[:space:]]\\+sw[[:space:]]\\+0[[:space:]]\\+0\\)|#\\1|' /etc/fstab
+        //                         '''
+        //                         break
+        //                     case 'kafka':
+        //                         remoteCommand += "echo 'Installing kcat for kafka...' && sudo apt-get install -y kcat\n"
+        //                         break
+        //                 }
+        //             }
                     
-                    echo "Executing final combined configuration script on ${ip}..."
-                    withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
-                        sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
-                    }
-                    echo "--- Finished All Component Configurations on ${ip} ---"
+        //             echo "Executing final combined configuration script on ${ip}..."
+        //             withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
+        //                 sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+        //             }
+        //             echo "--- Finished All Component Configurations on ${ip} ---"
                 
-            }
-        }
+        //     }
+        // }
 
-        stage('Install Dependencies') {
-            dependencyPlan.each { ip, versions ->
-                echo "--- Installing Dependencies on ${ip} ---"
+        // stage('Install Dependencies') {
+        //     dependencyPlan.each { ip, versions ->
+        //         echo "--- Installing Dependencies on ${ip} ---"
                 
-                def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-                def requiredJava = versions.java
-                def requiredPython = versions.python
+        //         def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
+        //         def requiredJava = versions.java
+        //         def requiredPython = versions.python
 
-                def deployUser = passwords[ip].deploy_user
-                def sshPort = config.ssh_port ?: 22
-                def deployHost = "${deployUser}@${ip}"
+        //         def deployUser = passwords[ip].deploy_user
+        //         def sshPort = config.ssh_port ?: 22
+        //         def deployHost = "${deployUser}@${ip}"
 
-                retry(3) {
-                    // sleep(10)
-                    echo "Attempting to connect to ${ip}..."
-                    def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
-                    def remoteLogPath = "/tmp/install_dependencies.log"
+        //         retry(3) {
+        //             // sleep(10)
+        //             echo "Attempting to connect to ${ip}..."
+        //             def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
+        //             def remoteLogPath = "/tmp/install_dependencies.log"
 
-                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+        //             sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
 
-                    def pythonVersionsString = requiredPython.join(' ')
-                    def javaVersionsString = requiredJava.join(' ')
+        //             def pythonVersionsString = requiredPython.join(' ')
+        //             def javaVersionsString = requiredJava.join(' ')
 
-                    def remoteCommand = """
-                        set -e
-                        chmod +x ${remoteScriptPath}
-                        sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
-                        echo "\\n--- Displaying last 30 lines of installation log ---"
-                        tail -n 30 ${remoteLogPath}
-                        echo "--- z ---"
-                    """
-                    sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+        //             def remoteCommand = """
+        //                 set -e
+        //                 chmod +x ${remoteScriptPath}
+        //                 sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
+        //                 echo "\\n--- Displaying last 30 lines of installation log ---"
+        //                 tail -n 30 ${remoteLogPath}
+        //                 echo "--- z ---"
+        //             """
+        //             sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
 
-                    def localLogFile = "install_log_${ip}.log"
-                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
-                    archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
+        //             def localLogFile = "install_log_${ip}.log"
+        //             sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
+        //             archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
 
-                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
-                }
-                echo "Successfully installed dependencies on ${ip}"
-            }
-        }
+        //             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
+        //         }
+        //         echo "Successfully installed dependencies on ${ip}"
+        //     }
+        // }
 
         stage('Configure Inter-Service SSH') {
             if (nodesToProvision.size() <= 1) {
@@ -577,7 +577,7 @@ node {
             echo "Pipeline completed successfully!"
         }
         
-        echo "Pipeline run finished. Cleaning up workspace..."
-        cleanWs()
+        // echo "Pipeline run finished. Cleaning up workspace..."
+        // cleanWs()
     }
 }
