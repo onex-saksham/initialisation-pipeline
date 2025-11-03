@@ -495,7 +495,7 @@ node {
 
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH keypair..."
-                        ssh-keygen -q -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
+                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
                     fi
 
                     cat ~/.ssh/id_rsa.pub
