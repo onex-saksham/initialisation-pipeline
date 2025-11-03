@@ -487,21 +487,22 @@ node {
 
                 echo "🔹 Setting up SSH key for API node ${apiIp}"
 
-                // Generate SSH key if not present and fetch it
+                def generateAndFetchKey = """
+                    mkdir -p ~/.ssh
+                    chmod 700 ~/.ssh
+
+                    if [ ! -f ~/.ssh/id_rsa.pub ]; then
+                        echo "Generating new SSH keypair..."
+                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q < /dev/null
+                    fi
+
+                    # Always output only the actual key, suppressing extra text
+                    cat ~/.ssh/id_rsa.pub | grep '^ssh-rsa'
+                """
+
+                def apiPubKeyRaw = ""
                 retry(3) {
-                    def generateAndFetchKey = """
-                        mkdir -p ~/.ssh
-                        chmod 700 ~/.ssh
-
-                        if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                            echo "Generating new SSH keypair..."
-                            ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q < /dev/null
-                        fi
-
-                        cat ~/.ssh/id_rsa.pub | grep '^ssh-rsa'
-                    """
-
-                    def apiPubKeyRaw = sh(
+                    apiPubKeyRaw = sh(
                         script: """
                             ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} "${generateAndFetchKey.replace('"', '\\"')}"
                         """,
@@ -509,13 +510,13 @@ node {
                     ).trim()
 
                     if (!apiPubKeyRaw.startsWith("ssh-rsa") && !apiPubKeyRaw.startsWith("ssh-ed25519")) {
-                        error "Failed to retrieve a valid SSH public key from ${apiHost}"
+                        echo "Retrying SSH key retrieval for ${apiHost} (attempt failed)..."
+                        error "Invalid SSH key retrieved, retrying..."
                     }
-
-                    def apiPubKey = apiPubKeyRaw
-                    echo "Successfully retrieved (and ensured) SSH key for ${apiHost}"
                 }
 
+                def apiPubKey = apiPubKeyRaw
+                echo "Successfully retrieved (and ensured) SSH key for ${apiHost}"
 
                 echo "SSH public key retrieved from ${apiIp}"
 
