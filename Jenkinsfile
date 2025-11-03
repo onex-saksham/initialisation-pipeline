@@ -369,8 +369,7 @@ node {
                                     sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
                                     sudo sysctl --system
                                     echo 'Disabling swap...'
-                                    sudo swapoff -a && sudo sed -i 's|^\(/swap.img[[:space:]]\+none[[:space:]]\+swap[[:space:]]\+sw[[:space:]]\+0[[:space:]]\+0\)|#\1|' /etc/fstab
-
+                                    sudo swapoff -a && sudo sed -i 's|^\\(/swap.img[[:space:]]\\+none[[:space:]]\\+swap[[:space:]]\\+sw[[:space:]]\\+0[[:space:]]\\+0\\)|#\\1|' /etc/fstab
                                 '''
                                 break
                             case 'kafka':
