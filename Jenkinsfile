@@ -103,21 +103,47 @@ node {
                     error "Failed to parse Vault response: ${e.message}"
                 }
 
-                // Extract actual secret data
-                def passwordsData = vaultJson?.data?.data
-                if (!passwordsData) {
-                    error "No passwords found under data.data at Vault path: ${vaultPath}"
+                // --- Extract all IP-based passwords from Vault response ---
+                def passwordsData = null
+
+                // Normal KV v2 case
+                if (vaultJson?.data?.data) {
+                    passwordsData = vaultJson.data.data
+                } else if (vaultJson?.data) {
+                    // Handle when JSON is stored under a single key like "passwords.json"
+                    def inner = vaultJson.data['passwords.json']
+                    if (inner instanceof String) {
+                        passwordsData = readJSON text: inner
+                    } else if (inner instanceof Map) {
+                        passwordsData = inner
+                    } else {
+                        // Try parsing any string field in .data as JSON
+                        def stringEntry = vaultJson.data.find { k, v -> v instanceof String }
+                        if (stringEntry) {
+                            passwordsData = readJSON text: stringEntry.value
+                        }
+                    }
                 }
 
-                // Write passwords to local file in pretty JSON
-                writeFile file: PASSWORDS_FILE,
-                        text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(passwordsData))
+                if (!passwordsData) {
+                    echo "DEBUG: Vault data keys found: ${vaultJson?.data?.keySet() ?: 'none'}"
+                    error "❌ Could not extract IP-based passwords map from Vault path: ${vaultPath}"
+                }
+
+                echo "✅ Extracted passwords for ${passwordsData.size()} IP(s): ${passwordsData.keySet()}"
+
+                // Write passwords to local file as pretty JSON
+                writeFile file: PASSWORDS_FILE, text: groovy.json.JsonOutput.prettyPrint(
+                    groovy.json.JsonOutput.toJson(passwordsData)
+                )
                 echo "passwords.json written locally at ${PASSWORDS_FILE}"
+                // --- end extraction ---
             }
 
-            // Now read it into the pipeline memory
+            // Read passwords file back into pipeline memory
             passwords = readJSON file: PASSWORDS_FILE
         }
+
 
         stage('Fetch SSH Key from Vault') {
             echo "Fetching Jenkins SSH private key from Vault using root token..."
@@ -159,8 +185,6 @@ node {
                 echo "SSH key stored locally at ${JENKINS_KEY_FILE}"
             }
         }
-
-
 
         stage('Identify Target Nodes and Dependencies') {
             echo "Parsing configuration to build deployment plan..."
