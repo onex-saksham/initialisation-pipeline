@@ -345,114 +345,114 @@ node {
             }
         }
 
-        stage('Configure Components') {
+        // stage('Configure Components') {
             
-                // Outer loop: Iterate through each server ONCE.
-                nodesToProvision.each { ip, componentList ->
-                    echo "--- Configuring ALL Components on ${ip} ---"
-                    def deployUser = passwords[ip].deploy_user
-                    def sshPort = config.ssh_port ?: 22
-                    def deployHost = "${deployUser}@${ip}"
+        //         // Outer loop: Iterate through each server ONCE.
+        //         nodesToProvision.each { ip, componentList ->
+        //             echo "--- Configuring ALL Components on ${ip} ---"
+        //             def deployUser = passwords[ip].deploy_user
+        //             def sshPort = config.ssh_port ?: 22
+        //             def deployHost = "${deployUser}@${ip}"
 
-                    // Start with the base script that runs for every server.
-                    def remoteCommand = '''
-                        set -e
-                        echo '>>> Disabling automatic unattended upgrades...'
-                        sudo systemctl stop unattended-upgrades.service || true
-                        sudo systemctl disable unattended-upgrades.service || true
-                        echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
-                        echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
-                        echo '>>> Updating package lists...'
-                        sudo apt-get update -y || true
-                    '''
+        //             // Start with the base script that runs for every server.
+        //             def remoteCommand = '''
+        //                 set -e
+        //                 echo '>>> Disabling automatic unattended upgrades...'
+        //                 sudo systemctl stop unattended-upgrades.service || true
+        //                 sudo systemctl disable unattended-upgrades.service || true
+        //                 echo 'APT::Periodic::Update-Package-Lists "0";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
+        //                 echo 'APT::Periodic::Unattended-Upgrade "0";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
+        //                 echo '>>> Updating package lists...'
+        //                 sudo apt-get update -y || true
+        //             '''
 
-                    // Inner loop: Iterate through EACH component planned for this IP.
-                    componentList.each { componentDetails ->
-                        def componentName = componentDetails.component
-                        def componentData = componentDetails.data
-                        echo " -> Adding configuration for component: ${componentName}"
+        //             // Inner loop: Iterate through EACH component planned for this IP.
+        //             componentList.each { componentDetails ->
+        //                 def componentName = componentDetails.component
+        //                 def componentData = componentDetails.data
+        //                 echo " -> Adding configuration for component: ${componentName}"
 
-                        // Append storage directory commands if they exist
-                        def storagePath = componentData.properties?.storage
-                        if (storagePath) {
-                            remoteCommand += """
-                                echo 'Creating storage directory: ${storagePath}...'
-                                sudo mkdir -p ${storagePath}
-                                sudo chown -R ${deployUser}:${deployUser} ${storagePath}
-                                sudo chmod -R 2775 ${storagePath}
-                            """
-                        }                        
+        //                 // Append storage directory commands if they exist
+        //                 def storagePath = componentData.properties?.storage
+        //                 if (storagePath) {
+        //                     remoteCommand += """
+        //                         echo 'Creating storage directory: ${storagePath}...'
+        //                         sudo mkdir -p ${storagePath}
+        //                         sudo chown -R ${deployUser}:${deployUser} ${storagePath}
+        //                         sudo chmod -R 2775 ${storagePath}
+        //                     """
+        //                 }                        
 
-                        switch (componentName) {
-                            case 'backend_job':
-                                remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev\n"
-                                break
-                            case 'doris_be':
-                                remoteCommand += '''
-                                    echo 'Applying doris_be kernel settings...'
-                                    sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
-                                    sudo sysctl --system
-                                    echo 'Disabling swap...'
-                                    sudo swapoff -a && sudo sed -i 's|^\\(/swap.img[[:space:]]\\+none[[:space:]]\\+swap[[:space:]]\\+sw[[:space:]]\\+0[[:space:]]\\+0\\)|#\\1|' /etc/fstab
-                                '''
-                                break
-                            case 'kafka':
-                                remoteCommand += "echo 'Installing kcat for kafka...' && sudo apt-get install -y kcat\n"
-                                break
-                        }
-                    }
+        //                 switch (componentName) {
+        //                     case 'backend_job':
+        //                         remoteCommand += "echo 'Installing build-essential for backend_job...' && export DEBIAN_FRONTEND=noninteractive && sudo apt-get install -y build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev\n"
+        //                         break
+        //                     case 'doris_be':
+        //                         remoteCommand += '''
+        //                             echo 'Applying doris_be kernel settings...'
+        //                             sudo sh -c 'echo "vm.max_map_count=2000000" > /etc/sysctl.d/60-doris-be.conf'
+        //                             sudo sysctl --system
+        //                             echo 'Disabling swap...'
+        //                             sudo swapoff -a && sudo sed -i 's|^\\(/swap.img[[:space:]]\\+none[[:space:]]\\+swap[[:space:]]\\+sw[[:space:]]\\+0[[:space:]]\\+0\\)|#\\1|' /etc/fstab
+        //                         '''
+        //                         break
+        //                     case 'kafka':
+        //                         remoteCommand += "echo 'Installing kcat for kafka...' && sudo apt-get install -y kcat\n"
+        //                         break
+        //                 }
+        //             }
                     
-                    echo "Executing final combined configuration script on ${ip}..."
-                    withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
-                        sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
-                    }
-                    echo "--- Finished All Component Configurations on ${ip} ---"
+        //             echo "Executing final combined configuration script on ${ip}..."
+        //             withEnv(["REMOTE_COMMAND=${remoteCommand}"]) {
+        //                 sh 'echo "$REMOTE_COMMAND" | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+        //             }
+        //             echo "--- Finished All Component Configurations on ${ip} ---"
                 
-            }
-        }
+        //     }
+        // }
 
-        stage('Install Dependencies') {
-            dependencyPlan.each { ip, versions ->
-                echo "--- Installing Dependencies on ${ip} ---"
+        // stage('Install Dependencies') {
+        //     dependencyPlan.each { ip, versions ->
+        //         echo "--- Installing Dependencies on ${ip} ---"
                 
-                def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
-                def requiredJava = versions.java
-                def requiredPython = versions.python
+        //         def JAVA_PYTHON_SCRIPT = "install_java_python.sh"
+        //         def requiredJava = versions.java
+        //         def requiredPython = versions.python
 
-                def deployUser = passwords[ip].deploy_user
-                def sshPort = config.ssh_port ?: 22
-                def deployHost = "${deployUser}@${ip}"
+        //         def deployUser = passwords[ip].deploy_user
+        //         def sshPort = config.ssh_port ?: 22
+        //         def deployHost = "${deployUser}@${ip}"
 
-                retry(3) {
-                    // sleep(10)
-                    echo "Attempting to connect to ${ip}..."
-                    def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
-                    def remoteLogPath = "/tmp/install_dependencies.log"
+        //         retry(3) {
+        //             // sleep(10)
+        //             echo "Attempting to connect to ${ip}..."
+        //             def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
+        //             def remoteLogPath = "/tmp/install_dependencies.log"
 
-                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
+        //             sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ./${JAVA_PYTHON_SCRIPT} ${deployHost}:${remoteScriptPath}"
 
-                    def pythonVersionsString = requiredPython.join(' ')
-                    def javaVersionsString = requiredJava.join(' ')
+        //             def pythonVersionsString = requiredPython.join(' ')
+        //             def javaVersionsString = requiredJava.join(' ')
 
-                    def remoteCommand = """
-                        set -e
-                        chmod +x ${remoteScriptPath}
-                        sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
-                        echo "\\n--- Displaying last 30 lines of installation log ---"
-                        tail -n 30 ${remoteLogPath}
-                        echo "--- z ---"
-                    """
-                    sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
+        //             def remoteCommand = """
+        //                 set -e
+        //                 chmod +x ${remoteScriptPath}
+        //                 sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
+        //                 echo "\\n--- Displaying last 30 lines of installation log ---"
+        //                 tail -n 30 ${remoteLogPath}
+        //                 echo "--- z ---"
+        //             """
+        //             sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
 
-                    def localLogFile = "install_log_${ip}.log"
-                    sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
-                    archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
+        //             def localLogFile = "install_log_${ip}.log"
+        //             sh "scp -i ${JENKINS_KEY_FILE} -P ${sshPort} -o StrictHostKeyChecking=no ${deployHost}:${remoteLogPath} ./${localLogFile}"
+        //             archiveArtifacts artifacts: localLogFile, allowEmptyArchive: true
 
-                    sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
-                }
-                echo "Successfully installed dependencies on ${ip}"
-            }
-        }
+        //             sh "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${deployHost} 'rm -f ${remoteScriptPath} ${remoteLogPath}'"
+        //         }
+        //         echo "Successfully installed dependencies on ${ip}"
+        //     }
+        // }
 
         stage('Configure Inter-Service SSH') {
             if (nodesToProvision.size() <= 1) {
@@ -488,33 +488,33 @@ node {
                 echo "🔹 Setting up SSH key for API node ${apiIp}"
 
                 // Generate SSH key if not present and fetch it
-                def generateAndFetchKey = """
-                    mkdir -p ~/.ssh
-                    chmod 700 ~/.ssh
+                retry(3) {
+                    def generateAndFetchKey = """
+                        mkdir -p ~/.ssh
+                        chmod 700 ~/.ssh
 
-                    if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                        echo "Generating new SSH keypair..."
-                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q < /dev/null
-                    fi
+                        if [ ! -f ~/.ssh/id_rsa.pub ]; then
+                            echo "Generating new SSH keypair..."
+                            ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q < /dev/null
+                        fi
 
-                    # Always output only the actual key, suppressing extra text
-                    cat ~/.ssh/id_rsa.pub | grep '^ssh-rsa'
+                        cat ~/.ssh/id_rsa.pub | grep '^ssh-rsa'
+                    """
 
-                """
+                    def apiPubKeyRaw = sh(
+                        script: """
+                            ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} "${generateAndFetchKey.replace('"', '\\"')}"
+                        """,
+                        returnStdout: true
+                    ).trim()
 
-                def apiPubKeyRaw = sh(
-                    script: """
-                        ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} "${generateAndFetchKey.replace('"', '\\"')}"
-                    """,
-                    returnStdout: true
-                ).trim()
+                    if (!apiPubKeyRaw.startsWith("ssh-rsa") && !apiPubKeyRaw.startsWith("ssh-ed25519")) {
+                        error "Failed to retrieve a valid SSH public key from ${apiHost}"
+                    }
 
-                if (!apiPubKeyRaw.startsWith("ssh-rsa") && !apiPubKeyRaw.startsWith("ssh-ed25519")) {
-                    error "Failed to retrieve a valid SSH public key from ${apiHost}"
+                    def apiPubKey = apiPubKeyRaw
+                    echo "Successfully retrieved (and ensured) SSH key for ${apiHost}"
                 }
-                def apiPubKey = apiPubKeyRaw
-
-                echo "Successfully retrieved (and ensured) SSH key for ${apiHost}"
 
 
                 echo "SSH public key retrieved from ${apiIp}"
