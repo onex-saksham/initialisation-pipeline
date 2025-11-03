@@ -424,7 +424,7 @@ node {
                 def deployHost = "${deployUser}@${ip}"
 
                 retry(3) {
-                    sleep(10)
+                    // sleep(10)
                     echo "Attempting to connect to ${ip}..."
                     def remoteScriptPath = "/tmp/${JAVA_PYTHON_SCRIPT}"
                     def remoteLogPath = "/tmp/install_dependencies.log"
@@ -440,7 +440,7 @@ node {
                         sudo ${remoteScriptPath} "${pythonVersionsString}" "${javaVersionsString}" > ${remoteLogPath} 2>&1
                         echo "\\n--- Displaying last 30 lines of installation log ---"
                         tail -n 30 ${remoteLogPath}
-                        echo "--- End of installation log tail ---"
+                        echo "--- z ---"
                     """
                     sh 'echo \'' + remoteCommand + '\' | ssh -i ' + JENKINS_KEY_FILE + ' -p ' + sshPort + ' -o StrictHostKeyChecking=no ' + deployHost + ' \'bash -s\''
 
@@ -501,7 +501,7 @@ node {
                     mkdir -p ~/.ssh; chmod 700 ~/.ssh
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH key..."
-                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
+                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa y
                     fi
                     cat ~/.ssh/id_rsa.pub
                 '''
