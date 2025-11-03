@@ -490,7 +490,7 @@ node {
                 // Generate SSH key if not present
                 def apiPubKey = sh(
                     script: """
-                        ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -se' <<'EOF'
+                        ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} bash <<'EOF'
                             set -euxo pipefail
                             mkdir -p ~/.ssh
                             chmod 700 ~/.ssh
@@ -508,6 +508,7 @@ node {
                     """,
                     returnStdout: true
                 ).trim()
+
 
                 if (!apiPubKey.contains("ssh-rsa")) {
                     error "Failed to obtain a valid SSH public key from ${apiHost}"
