@@ -112,7 +112,6 @@
         "ports": {
             "listener": 19308
         }        
-        
     },
     "monitoring": {
         "node_ip": "10.20.3.149",

@@ -489,7 +489,7 @@ node {
 
                 // Generate SSH key if not present and fetch it
                 def generateAndFetchKey = """
-                    set -euxo pipefail
+                    set -e
                     mkdir -p ~/.ssh
                     chmod 700 ~/.ssh
 
