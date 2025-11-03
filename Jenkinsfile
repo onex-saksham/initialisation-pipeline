@@ -494,13 +494,13 @@ node {
                 chmod 700 ~/.ssh
 
                 if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                    echo "🔐 Generating new SSH keypair..."
+                    echo "Generating new SSH keypair..."
                     ssh-keygen -q -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
                 else
-                    echo "✅ SSH keypair already exists."
+                    echo "SSH keypair already exists."
                 fi
 
-                echo "📜 Public key content:"
+                echo "Public key content:"
                 cat ~/.ssh/id_rsa.pub
                 '''
 
@@ -516,7 +516,7 @@ node {
                     error "Failed to obtain a valid SSH public key from ${apiHost}"
                 }
 
-                echo "✅ Successfully retrieved public key for ${apiHost}"
+                echo "Successfully retrieved public key for ${apiHost}"
 
                 echo "SSH public key retrieved from ${apiIp}"
 
