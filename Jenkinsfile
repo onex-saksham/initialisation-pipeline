@@ -504,17 +504,18 @@ node {
                 cat ~/.ssh/id_rsa.pub
                 '''
 
-                def apiPubKey = sh(
+                def apiPubKeyRaw = sh(
                     script: """
-                        echo "${remoteScript.replace('"', '\\"')}" | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -se'
+                        ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} "cat ~/.ssh/id_rsa.pub"
                     """,
                     returnStdout: true
                 ).trim()
 
-
-                if (!apiPubKey.contains("ssh-rsa")) {
-                    error "Failed to obtain a valid SSH public key from ${apiHost}"
+                if (!apiPubKeyRaw.startsWith("ssh-rsa") && !apiPubKeyRaw.startsWith("ssh-ed25519")) {
+                    error "Failed to retrieve a valid SSH public key from ${apiHost}"
                 }
+                def apiPubKey = apiPubKeyRaw
+
 
                 echo "Successfully retrieved public key for ${apiHost}"
 
