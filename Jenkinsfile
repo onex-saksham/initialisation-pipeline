@@ -493,9 +493,10 @@ node {
                     mkdir -p ~/.ssh && chmod 700 ~/.ssh
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH key..."
-                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa -y
+                        ssh-keygen -q -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
                     fi
                     cat ~/.ssh/id_rsa.pub
+
                 """
                 def apiPubKey = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} '${genKeyCmd}'", returnStdout: true).trim()
 
