@@ -267,8 +267,8 @@ node {
                         echo '${initialPass}' | sudo -S chmod 755 /home/${deployUser}/.config                        
                         echo "Setting secure permissions on home directory..."
                         echo '${initialPass}' | sudo -S chmod 750 /home/${deployUser}                        
-                        // echo "Changing root password..."
-                        // echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
+                        echo "Changing root password..."
+                        echo '${initialPass}' | sudo -S sh -c 'echo "root:${nodePasswords.new_root_password}" | chpasswd'                        
                         echo "Setting timezone to Asia/Kolkata..."
                         echo '${initialPass}' | sudo -S timedatectl set-timezone Asia/Kolkata
                     """
