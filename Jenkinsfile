@@ -497,7 +497,8 @@ node {
                         echo "Generating new SSH keypair..."
                         ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
                     fi
-
+                    
+                    sleep 10
                     cat ~/.ssh/id_rsa.pub
                 """
 
