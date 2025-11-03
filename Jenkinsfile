@@ -523,6 +523,7 @@ node {
 
 
 
+
                 def apiPubKeyRaw = sh(
                     script: """
                         ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} "${generateAndFetchKey.replace('"', '\\"')}"
