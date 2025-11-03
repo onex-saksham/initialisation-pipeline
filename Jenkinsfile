@@ -487,42 +487,19 @@ node {
 
                 echo "🔹 Setting up SSH key for API node ${apiIp}"
 
+                // Generate SSH key if not present and fetch it
                 def generateAndFetchKey = """
-                set -e
-                echo "[INFO] Starting SSH key setup..."
-                mkdir -p ~/.ssh
-                chmod 700 ~/.ssh
+                    set -e
+                    mkdir -p ~/.ssh
+                    chmod 700 ~/.ssh
 
-                if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                    echo "[INFO] No SSH key found. Generating new SSH keypair..."
-                    ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q
-                    rc=\$?
-                    echo "[DEBUG] ssh-keygen exited with code: \$rc"
-                    if [ \$rc -ne 0 ]; then
-                        echo "[ERROR] ssh-keygen failed with exit code \$rc"
-                        ls -la ~/.ssh
-                        exit 1
+                    if [ ! -f ~/.ssh/id_rsa.pub ]; then
+                        echo "Generating new SSH keypair..."
+                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
                     fi
-                else
-                    echo "[INFO] Existing SSH key found."
-                fi
 
-                echo "[DEBUG] Checking for ~/.ssh/id_rsa.pub existence..."
-                if [ -f ~/.ssh/id_rsa.pub ]; then
-                    echo "[INFO] SSH key generation successful. Displaying key below:"
-                    ls -la ~/.ssh
-                    echo "-----BEGIN PUBLIC KEY-----"
                     cat ~/.ssh/id_rsa.pub
-                    echo "-----END PUBLIC KEY-----"
-                else
-                    echo "[ERROR] ~/.ssh/id_rsa.pub missing after generation."
-                    ls -la ~/.ssh
-                    exit 1
-                fi
                 """
-
-
-
 
                 def apiPubKeyRaw = sh(
                     script: """
