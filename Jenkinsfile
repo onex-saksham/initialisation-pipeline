@@ -493,7 +493,7 @@ node {
                     mkdir -p ~/.ssh && chmod 700 ~/.ssh
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH key..."
-                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
+                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa -y
                     fi
                     cat ~/.ssh/id_rsa.pub
                 """
