@@ -3,12 +3,11 @@
     "ssh_port": "22",
     "zookeeper": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "properties": {
-            "storage": "/data/zookeeper-storage"
-        },     
-           
+            "storage": "/home/saksham/data/zookeeper-storage"
+        },        
         "ports": {
             "client": 12181,
             "peer_to_peer": 12888,
@@ -19,7 +18,7 @@
     },
     "kraft_controller": {
         "properties": {
-            "storage": "/data/kraft-controller-storage",            
+            "storage": "/home/saksham/data/kraft-controller-storage",            
         "ports": {
             "listener": 19093
         }
@@ -28,10 +27,10 @@
     
     "kafka": {
         "broker_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "properties": {
-            "storage": "/data/kafka-storage"
+            "storage": "/home/saksham/data/kafka-storage"
         },
         "ports": {
             "jmx": 19091,
@@ -42,7 +41,7 @@
     },
     "schema_registry": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "ports": {
             "listener": 28081
@@ -50,7 +49,7 @@
     },
     "nifi": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "ports": {
             "node_load_balance": 16342,
@@ -64,10 +63,10 @@
     },
     "doris_fe": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "properties": {
-            "log": "${DORIS_HOME}/log"
+            "log": "$/home/saksham/{DORIS_HOME}/log"
         },
         "ports": {
             "http": 18030,
@@ -80,11 +79,11 @@
     },
     "doris_be": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "properties": {
-            "log": "${DORIS_HOME}/log",
-            "storage": "/data/doris-be-storage"
+            "log": "$/home/saksham/{DORIS_HOME}/log",
+            "storage": "/home/saksham/data/doris-be-storage"
         },
         "ports": {
             "webserver": 18040,
@@ -115,9 +114,9 @@
         }
     },
     "monitoring": {
-        "node_ip": "10.20.3.78",
+        "node_ip": "10.20.3.149",
         "properties": {
-            "storage": "/data/grafana-storage"
+            "storage": "/home/saksham/data/grafana-storage"
         },
         "ports": {
             "prometheus": 19090,
@@ -128,7 +127,7 @@
     },
     "api": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
         ],
         "ports": {
             "sms": 22000,
@@ -140,13 +139,13 @@
     
     "backend_job": {
         "node_ip": [
-            "10.20.3.78"
+            "10.20.3.149"
     ],
         "java_version": "17",
         "python_version": "3.12.0"
     },
     "nginx": {
-        "node_ip": "__nginx_ip__",
+        "node_ip": "10.20.3.149",
         "ports": {
             "doris_fe": 11080,
             "api_sms": 11081,
@@ -154,5 +153,4 @@
             "schema_registry": 11083
     }
     }
-
 }
