@@ -12,6 +12,7 @@
             "peer_to_peer": 12888,
             "leader_election": 13888
         },
+        
         "java_version": "17",
         "python_version": "3.12.0"
     },
