@@ -495,11 +495,12 @@ node {
 
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH keypair..."
-                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
+                        ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q < /dev/null
                     fi
-                    
-                    sleep 10
-                    cat ~/.ssh/id_rsa.pub
+
+                    # Always output only the actual key, suppressing extra text
+                    cat ~/.ssh/id_rsa.pub | grep '^ssh-rsa'
+
                 """
 
                 def apiPubKeyRaw = sh(
