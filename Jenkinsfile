@@ -490,23 +490,33 @@ node {
                 def generateAndFetchKey = """
                 set -e
                 echo "[INFO] Starting SSH key setup..."
-                mkdir -p ~/.ssh || { echo "[ERROR] Failed to create ~/.ssh"; exit 1; }
-                chmod 700 ~/.ssh || { echo "[ERROR] Failed to chmod ~/.ssh"; exit 1; }
+                mkdir -p ~/.ssh
+                chmod 700 ~/.ssh
 
                 if [ ! -f ~/.ssh/id_rsa.pub ]; then
-                    echo "[INFO] No SSH key found, generating..."
-                    ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa <<< y > /dev/null 2>&1 || {
-                        echo "[ERROR] ssh-keygen failed with exit code \$?"; exit 1;
-                    }
+                    echo "[INFO] No SSH key found. Generating new SSH keypair..."
+                    ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa -q
+                    rc=\$?
+                    echo "[DEBUG] ssh-keygen exited with code: \$rc"
+                    if [ \$rc -ne 0 ]; then
+                        echo "[ERROR] ssh-keygen failed with exit code \$rc"
+                        ls -la ~/.ssh
+                        exit 1
+                    fi
                 else
-                    echo "[INFO] SSH key already exists."
+                    echo "[INFO] Existing SSH key found."
                 fi
 
+                echo "[DEBUG] Checking for ~/.ssh/id_rsa.pub existence..."
                 if [ -f ~/.ssh/id_rsa.pub ]; then
-                    echo "[INFO] SSH key generation successful, displaying key:"
+                    echo "[INFO] SSH key generation successful. Displaying key below:"
+                    ls -la ~/.ssh
+                    echo "-----BEGIN PUBLIC KEY-----"
                     cat ~/.ssh/id_rsa.pub
+                    echo "-----END PUBLIC KEY-----"
                 else
-                    echo "[ERROR] ~/.ssh/id_rsa.pub missing after generation"
+                    echo "[ERROR] ~/.ssh/id_rsa.pub missing after generation."
+                    ls -la ~/.ssh
                     exit 1
                 fi
                 """
