@@ -486,7 +486,7 @@ node {
                 def apiUser = passwords[apiIp].deploy_user
                 def apiHost = "${apiUser}@${apiIp}"
 
-                // 1️⃣ Ensure sshpass is available on API node
+                // 1 Ensure sshpass is available on API node
                 def installSshpass = """
                     if ! command -v sshpass >/dev/null 2>&1; then
                         echo 'Installing sshpass...'
@@ -495,13 +495,13 @@ node {
                 """
                 sh "echo '${installSshpass}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
 
-                // 2️⃣ Generate SSH key if not exists, safely with proper quoting
+                // 2 Generate SSH key if not exists, safely
                 def genKeyCmd = '''
                     set -e
                     mkdir -p ~/.ssh; chmod 700 ~/.ssh
                     if [ ! -f ~/.ssh/id_rsa.pub ]; then
                         echo "Generating new SSH key..."
-                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa y
+                        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
                     fi
                     cat ~/.ssh/id_rsa.pub
                 '''
@@ -511,9 +511,12 @@ node {
                     error "Failed to obtain a valid SSH public key from API node ${apiIp}"
                 }
 
-                echo "API key retrieved from ${apiIp}"
+                echo " Retrieved SSH public key from ${apiIp}"
 
-                // 3️⃣ Distribute this key to all backend nodes
+                // Base64-encode public key to safely transfer over SSH
+                def apiPubKeyB64 = sh(script: "echo '${apiPubKey}' | base64 -w 0", returnStdout: true).trim()
+
+                // Distribute this key to all backend nodes
                 backendIps.each { backendIp ->
                     if (backendIp == apiIp) {
                         echo "Skipping distribution from ${apiIp} to itself."
@@ -525,29 +528,37 @@ node {
 
                     echo "Adding API public key from ${apiIp} to backend ${backendIp}..."
 
-                    // Send the key directly (mimics Python approach)
                     def distributeCmd = """
-                        mkdir -p ~/.ssh; chmod 700 ~/.ssh
-                        echo '${apiPubKey.replace("'", "'\"'\"'")}' >> ~/.ssh/authorized_keys
+                        set -e
+                        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+                        echo '${apiPubKeyB64}' | base64 -d >> ~/.ssh/authorized_keys
                         chmod 600 ~/.ssh/authorized_keys
                     """
 
-                    // Use sshpass to connect password-based to backend
                     def sendCmd = """
                         sshpass -p '${backendPass}' ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} '${distributeCmd}'
                     """
+
+                    // Send the key from API node to backend
                     sh "echo '${sendCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
 
                     // 4️⃣ Verify SSH connectivity
                     def verifyCmd = """
                         ssh -p ${sshPort} -o StrictHostKeyChecking=no ${backendUser}@${backendIp} 'echo SSH connection successful'
                     """
-                    sh "echo '${verifyCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'"
+                    def result = sh(script: "echo '${verifyCmd}' | ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} 'bash -s'", returnStatus: true)
+
+                    if (result == 0) {
+                        echo "Verified SSH connectivity from ${apiIp} ➜ ${backendIp}"
+                    } else {
+                        echo "SSH connectivity test failed from ${apiIp} to ${backendIp}"
+                    }
                 }
             }
 
             echo "--- Completed Inter-Service SSH Configuration ---"
         }
+
     } catch (err) {
         echo "Pipeline failed. Please check the logs and build artifacts."
         currentBuild.result = 'FAILURE'
