@@ -500,10 +500,10 @@ node {
                 def apiPubKey = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} '${genKeyCmd}'", returnStdout: true).trim()
 
                 if (!apiPubKey || !apiPubKey.startsWith("ssh-rsa")) {
-                    error "❌ Failed to obtain public key from API node ${apiIp}"
+                    error "Failed to obtain public key from API node ${apiIp}"
                 }
 
-                echo "✅ SSH public key retrieved from ${apiIp}"
+                echo "SSH public key retrieved from ${apiIp}"
 
                 backendIps.each { backendIp ->
                     if (backendIp == apiIp) {
@@ -530,10 +530,10 @@ node {
                     def result = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} \"${sendKeyCmd}\"", returnStatus: true)
 
                     if (result != 0) {
-                        echo "❌ Failed to add SSH key from API ${apiIp} to backend ${backendIp}"
+                        echo "Failed to add SSH key from API ${apiIp} to backend ${backendIp}"
                         overallSuccess = false
                     } else {
-                        echo "✅ Added API key to backend ${backendIp}"
+                        echo "Added API key to backend ${backendIp}"
                     }
 
                     // Test passwordless SSH from API → Backend
@@ -541,18 +541,18 @@ node {
                     def verifyResult = sh(script: "ssh -i ${JENKINS_KEY_FILE} -p ${sshPort} -o StrictHostKeyChecking=no ${apiHost} \"${verifyCmd}\"", returnStatus: true)
 
                     if (verifyResult == 0) {
-                        echo "✅ Verified passwordless SSH from ${apiIp} → ${backendIp}"
+                        echo "Verified passwordless SSH from ${apiIp} → ${backendIp}"
                     } else {
-                        echo "⚠️ SSH connectivity test failed from ${apiIp} → ${backendIp}"
+                        echo "SSH connectivity test failed from ${apiIp} → ${backendIp}"
                         overallSuccess = false
                     }
                 }
             }
 
             if (!overallSuccess) {
-                error "❌ Inter-service SSH configuration failed. Check logs above."
+                error "Inter-service SSH configuration failed. Check logs above."
             } else {
-                echo "--- ✅ Completed Inter-Service SSH Configuration Successfully ---"
+                echo "--- Completed Inter-Service SSH Configuration Successfully ---"
             }
         }
 
@@ -568,7 +568,7 @@ node {
             echo "Pipeline completed successfully!"
         }
         
-        // echo "Pipeline run finished. Cleaning up workspace..."
-        // cleanWs()
+        echo "Pipeline run finished. Cleaning up workspace..."
+        cleanWs()
     }
 }
